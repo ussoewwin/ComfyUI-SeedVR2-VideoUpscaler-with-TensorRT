@@ -309,13 +309,13 @@ def ensure_trt_engine_for_frames(frames: int, vae: torch.nn.Module | None = None
             torch.cuda.empty_cache()
 
 
-class SeedVR2LoadTensorRTVAEModel(io.ComfyNode):
+class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
     """
-    SeedVR2 Load TensorRT VAE Model Node
+    SeedVR2 Load TensorRT VAE Encoder Node
     
-    Direct drop-in replacement for standard VAE Loader.
+    Direct drop-in replacement for standard VAE Loader (encoder path).
     Enables dedicated TensorRT RTX VAE acceleration (2x-5x faster) on NVIDIA GPUs.
-    Automatically builds dedicated engines matching your workflow batch size for 1-shot direct execution.
+    Connect directly to the vae_encode input of SeedVR2 Video Upscaler node.
     """
 
     @classmethod
@@ -324,14 +324,13 @@ class SeedVR2LoadTensorRTVAEModel(io.ComfyNode):
         vae_models = get_available_vae_models()
 
         return io.Schema(
-            node_id="SeedVR2LoadTensorRTVAEModel",
-            display_name="SeedVR2 Load TensorRT VAE Model",
+            node_id="SeedVR2LoadTensorRTVAEEncoder",
+            display_name="SeedVR2 Load TensorRT VAE Encoder",
             category="SEEDVR2",
             description=(
-                "Load and configure SeedVR2 VAE with TensorRT RTX acceleration. "
-                "Drop-in replacement for standard VAE Loader that provides 2x-5x faster encoding and decoding. "
-                "Automatically builds dedicated engines for your batch size for 1-shot maximum speed.\n\n"
-                "Connect directly to SeedVR2 Video Upscaler node."
+                "Encoder-only TensorRT VAE configuration. Enables dedicated TensorRT RTX "
+                "VAE encoder acceleration (2x-5x faster) on NVIDIA GPUs.\n\n"
+                "Connect directly to the vae_encode input of SeedVR2 Video Upscaler node."
             ),
             inputs=[
                 io.Combo.Input("model",
@@ -345,7 +344,7 @@ class SeedVR2LoadTensorRTVAEModel(io.ComfyNode):
                     tooltip="GPU device for VAE inference"
                 ),
                 io.Combo.Input("engine_frames",
-                    options=_available_engine_frames(),
+                    options=_available_engine_frames("encoder"),
                     default="auto",
                     optional=True,
                     tooltip="TensorRT engine frame size. Auto-populated from engines in tensorrt_backend/artifacts/. auto = pick the largest available engine."
@@ -353,7 +352,7 @@ class SeedVR2LoadTensorRTVAEModel(io.ComfyNode):
             ],
             outputs=[
                 io.Custom("SEEDVR2_VAE").Output(
-                    tooltip="VAE configuration ready to connect to SeedVR2 Video Upscaler node (with TensorRT enabled)."
+                    tooltip="VAE configuration ready to connect to SeedVR2 Video Upscaler node (vae_encode input)."
                 )
             ]
         )
@@ -369,7 +368,7 @@ class SeedVR2LoadTensorRTVAEModel(io.ComfyNode):
             from comfy_execution.utils import get_executing_context
             node_id = get_executing_context().node_id
         except Exception:
-            node_id = "seedvr2_trt_vae"
+            node_id = "seedvr2_trt_vae_encoder"
 
         vae_config: Dict[str, Any] = {
             "model": model,
@@ -383,6 +382,10 @@ class SeedVR2LoadTensorRTVAEModel(io.ComfyNode):
         }
 
         return io.NodeOutput(vae_config)
+
+
+# Backward compatibility alias
+SeedVR2LoadTensorRTVAEModel = SeedVR2LoadTensorRTVAEEncoder
 
 
 class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):

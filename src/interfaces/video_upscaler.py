@@ -250,7 +250,7 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
         Args:
             image: Input video frames as tensor (N, H, W, C) in [0, 1] range
             dit: DiT model configuration from SeedVR2LoadDiTModel node
-            vae_encode: VAE configuration for the encoder path (SeedVR2LoadTensorRTVAEModel or SeedVR2LoadVAEModel)
+            vae_encode: VAE configuration for the encoder path (SeedVR2LoadTensorRTVAEEncoder or SeedVR2LoadVAEModel)
             vae_decode: VAE configuration for the decoder path (SeedVR2LoadTensorRTVAEDecoder or SeedVR2LoadVAEModel)
             seed: Random seed for reproducible generation
             resolution: Target resolution for shortest edge (maintains aspect ratio)
