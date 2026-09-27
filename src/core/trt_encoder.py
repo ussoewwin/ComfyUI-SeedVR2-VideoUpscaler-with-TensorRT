@@ -229,7 +229,7 @@ def _pick_engine_frames(total_frames: int, preferred: str = "auto") -> int | Non
                 return cand
         except ValueError:
             pass
-    for cand in (total_frames, 29, 21, 5):
+    for cand in (total_frames, 29, 21, 17, 13, 9, 5):
         if find_engine_path(cand)[0] is not None:
             return cand
     return None
@@ -285,7 +285,7 @@ def encode(sample: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: 
 
     engine_frames = _pick_engine_frames(total_frames, engine_frames)
     if engine_frames is None:
-        raise FileNotFoundError("No TensorRT VAE encoder engine found (need vae_encoder_{5,21,29}f_tile512.rtxplan)")
+        raise FileNotFoundError("No TensorRT VAE encoder engine found (need vae_encoder_{5,9,13,17,21,29}f_tile512.rtxplan)")
     if engine_frames == total_frames:
         print(f"[SeedVR2 TensorRT] Encoding {engine_frames}f in 1 shot with dedicated {engine_frames}f TensorRT engine...")
         return _encode_single_chunk(sample, total_frames, vae=vae, dit_model=dit_model)
