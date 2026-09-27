@@ -132,10 +132,9 @@ from .src.interfaces import (
     SeedVR2BuildTensorRTVAE,
     SeedVR2LoadTensorRTVAEModel,
     SeedVR2LoadTensorRTVAEDecoder,
-    SeedVR2LoadTensorRTVAEEncoder,
     SeedVR2SaveVideo,
 )
 
-print(f"[SeedVR2] Loaded nodes: SeedVR2VideoUpscaler, SeedVR2LoadTensorRTVAEModel (⚡TRT), SeedVR2LoadTensorRTVAEDecoder (⚡TRT), SeedVR2LoadTensorRTVAEEncoder (⚡TRT), SeedVR2BuildTensorRTVAE, SeedVR2LoadVAEModel, SeedVR2LoadDiTModel, SeedVR2SaveVideo")
+print(f"[SeedVR2] Loaded nodes: SeedVR2VideoUpscaler, SeedVR2LoadTensorRTVAEModel (⚡TRT), SeedVR2LoadTensorRTVAEDecoder (⚡TRT), SeedVR2BuildTensorRTVAE, SeedVR2LoadVAEModel, SeedVR2LoadDiTModel, SeedVR2SaveVideo")
 
-__all__ = ["comfy_entrypoint", "SeedVR2Extension"]
+__all__ = ["comfy_entrypoint", "SeedVR2Extension"]

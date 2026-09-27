@@ -273,19 +273,28 @@ class VideoDiffusionInfer():
                 _enc_trt = getattr(self, "use_tensorrt_vae_encode",
                                    getattr(self, "use_tensorrt_vae", False))
                 if _enc_trt or os.environ.get("SEEDVR2_TRT_ENCODER", "0") == "1":
-                    try:
-                        from .trt_encoder import is_available as trt_enc_available, encode as trt_encode
-                        enc_sample = sample if sample.ndim == 5 else sample.unsqueeze(0)
-                        if enc_sample.ndim == 5 and trt_enc_available(enc_sample.shape[2]):
-                            self.debug.log(f"Encoding with TensorRT VAE Encoder (engine={getattr(self, 'use_tensorrt_engine_frames', 'auto')})", category="info", indent_level=1)
-                            latent = _trt_encode_batch(enc_sample, self.vae, self._resolve_dit_name(), getattr(self, 'use_tensorrt_engine_frames', 'auto'))
-                            latent = latent.unsqueeze(2) if latent.ndim == 4 else latent
-                            latent = optimized_channels_to_last(latent)
-                            latent = (latent - shift) * scale
-                            latents.append(latent)
-                            continue
-                    except Exception as trt_err:
-                        self.debug.log(f"TensorRT VAE Encoder fallback to standard VAE: {trt_err}", category="warning", indent_level=1)
+                    # No silent fp16 fallback: selecting the TensorRT encoder means
+                    # TRT must encode. A missing engine / any failure raises a clear
+                    # error instead of quietly running the standard (fp16) VAE.
+                    from .trt_encoder import encode as trt_encode, HAS_TRT as _trt_has
+                    if not _trt_has:
+                        raise RuntimeError(
+                            "TensorRT VAE Encoder is selected but TensorRT is not available. "
+                            "Install tensorrt-rtx or use SeedVR2LoadVAEModel for fp16 encode."
+                        )
+                    enc_sample = sample if sample.ndim == 5 else sample.unsqueeze(0)
+                    if enc_sample.ndim != 5:
+                        raise RuntimeError(
+                            f"TensorRT VAE Encoder expects [1,C,T,H,W], got {tuple(sample.shape)}. "
+                            "Use SeedVR2LoadVAEModel for fp16 encode."
+                        )
+                    self.debug.log(f"Encoding with TensorRT VAE Encoder (engine={getattr(self, 'use_tensorrt_engine_frames', 'auto')})", category="info", indent_level=1)
+                    latent = _trt_encode_batch(enc_sample, self.vae, self._resolve_dit_name(), getattr(self, 'use_tensorrt_engine_frames', 'auto'))
+                    latent = latent.unsqueeze(2) if latent.ndim == 4 else latent
+                    latent = optimized_channels_to_last(latent)
+                    latent = (latent - shift) * scale
+                    latents.append(latent)
+                    continue
 
                 if hasattr(self.vae, "preprocess"):
                     sample = self.vae.preprocess(sample)

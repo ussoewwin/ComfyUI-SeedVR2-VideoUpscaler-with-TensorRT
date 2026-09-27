@@ -13,7 +13,6 @@ from .trt_vae_builder import SeedVR2BuildTensorRTVAE
 from .trt_vae_model_loader import (
     SeedVR2LoadTensorRTVAEModel,
     SeedVR2LoadTensorRTVAEDecoder,
-    SeedVR2LoadTensorRTVAEEncoder,
 )
 from .video_save import SeedVR2SaveVideo
 
@@ -31,7 +30,6 @@ class SeedVR2Extension(ComfyExtension):
             SeedVR2BuildTensorRTVAE,
             SeedVR2LoadTensorRTVAEModel,
             SeedVR2LoadTensorRTVAEDecoder,
-            SeedVR2LoadTensorRTVAEEncoder,
             SeedVR2SaveVideo,
         ]
 
@@ -49,8 +47,7 @@ __all__ = [
     'SeedVR2BuildTensorRTVAE',
     'SeedVR2LoadTensorRTVAEModel',
     'SeedVR2LoadTensorRTVAEDecoder',
-    'SeedVR2LoadTensorRTVAEEncoder',
     'SeedVR2SaveVideo',
     'SeedVR2Extension',
     'comfy_entrypoint',
-]
+]
