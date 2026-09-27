@@ -56,8 +56,8 @@ _ENCODE_LOCK = Lock()
 
 
 def find_engine_path(frames: int) -> tuple[Path | None, int]:
-    """Return (engine_path, tile_px). Prefers the 256px-tile engine, then 512px."""
-    for tile_px in (256, 512):
+    """Return (engine_path, tile_px). Prefers the 512px-tile engine (Studio standard), then 256px."""
+    for tile_px in (512, 256):
         name = f"vae_encoder_{frames}f_tile{tile_px}.rtxplan"
         for d in ARTIFACTS_DIRS:
             p = d / name
@@ -137,41 +137,49 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     if context is None:
         raise RuntimeError("TensorRT could not create a per-batch encoder context")
 
-    # Set input shape to the engine's tile size (256px or 512px)
-    context.set_input_shape(input_name, (1, 3, frames, tile_px, tile_px))
-    # Barrier: TRT may (de)allocate internal buffers asynchronously after
-    # set_input_shape. Without a sync, the FIRST tile of a batch intermittently
-    # reads a half-initialized buffer -> NaN (always the first tile y=0/x=0).
-    torch.cuda.synchronize()
+    # Studio-compatible shape check: only call set_input_shape if the current shape
+    # actually differs from the target tile shape. Static-shape engines (built for
+    # exact tile sizes) never need set_input_shape called, avoiding TRT's internal
+    # buffer re-allocation/reset which causes the first-tile uninitialized memory glitch.
+    target_shape = (1, 3, frames, tile_px, tile_px)
+    current_shape = tuple(context.get_tensor_shape(input_name))
+    if current_shape != target_shape:
+        context.set_input_shape(input_name, target_shape)
+        torch.cuda.synchronize()
 
     source = sample.to(device="cuda", dtype=torch.float16).contiguous()
-    # Wide overlap (96px on 256px tiles = 37.5%) to keep the tile-edge zero-padding
-    # influence out of the blended region. Small tiles make the receptive-field
-    # edge effect proportionally larger, so 256px needs a wider overlap than 512px.
     tile, overlap = tile_px, tile_px * 3 // 8  # 37.5% tile-to-tile overlap (96px@256, 192px@512)
-    # Outer pad = half a tile: places each image corner at the CENTER of its
-    # corner tile, so the receptive-field-poor tile edges and the replicated
-    # padding stay away from real image content (fixes the top-left blur/noise).
-    pad = tile_px // 2
-    source = torch.nn.functional.pad(source, (pad, pad, pad, pad, 0, 0), mode="replicate")
-    height_p, width_p = height + 2 * pad, width + 2 * pad
-    ys, xs = _positions(height_p, tile, overlap), _positions(width_p, tile, overlap)
-    padded_h, padded_w = max(height_p, ys[-1] + tile), max(width_p, xs[-1] + tile)
-    source = torch.nn.functional.pad(source, (0, padded_w - width_p, 0, padded_h - height_p))
+    ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
+    padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
+    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
     latent_frames = (frames - 1) // 4 + 1
     latent_h, latent_w = height // 8, width // 8
     raw_h, raw_w = padded_h // 8, padded_w // 8
+    tile_lat = tile_px // 8
+    overlap_latent = overlap // 8
     result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
     weights = torch.zeros_like(result)
     dc_result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
-    overlap_latent = overlap // 8
-    offset_latent = pad // 8
 
     with _ENCODE_LOCK, torch.cuda.stream(stream):
+        # Warmup run: forces TensorRT to allocate and bind internal scratchpad memory.
+        # Without this, the very first execution (tile y=0, x=0) reads uninitialized
+        # GPU buffer memory, resulting in severe noise/artifact in the top-left corner.
+        warmup_in = torch.zeros((1, 3, frames, tile_px, tile_px), device="cuda", dtype=torch.float16)
+        warmup_out = torch.zeros((1, 32, latent_frames, tile_lat, tile_lat), device="cuda", dtype=torch.float16)
+        context.set_tensor_address(input_name, warmup_in.data_ptr())
+        context.set_tensor_address(output_name, warmup_out.data_ptr())
+        context.execute_async_v3(stream.cuda_stream)
+        stream.synchronize()
+        del warmup_in, warmup_out
+
+        # NOTE (Studio Architecture & Address Safety):
+        # A context's tensor addresses are mutable. For the safe/default path we execute
+        # one tile at a time under _ENCODE_LOCK with stream.synchronize() so addresses
+        # cannot be overwritten by a later queued tile.
         for y in ys:
             for x in xs:
                 tile_input = source[:, :, :, y:y + tile, x:x + tile].contiguous()
-                tile_lat = tile_px // 8
                 tile_output = torch.zeros((1, 32, latent_frames, tile_lat, tile_lat), device="cuda", dtype=torch.float16)
                 context.set_tensor_address(input_name, tile_input.data_ptr())
                 context.set_tensor_address(output_name, tile_output.data_ptr())
@@ -198,11 +206,17 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
                 result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += corrected * window
                 dc_result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += dc.float() * window
                 weights[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += window
+                del tile_input, tile_output
 
     restored = (result + dc_result) / weights.clamp_min(1e-6)
-    encoded = restored[:, :16, :, offset_latent:offset_latent + latent_h, offset_latent:offset_latent + latent_w].to(sample.dtype)
+    encoded = restored[:, :16, :, :latent_h, :latent_w].to(sample.dtype)
     if _TRT_DEBUG:
         _trt_dbg_stats(f"enc_chunk_out_{frames}f", encoded)
+    del source, result, weights, dc_result
+    import gc as _gc
+    _gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return encoded
 
 
@@ -238,6 +252,11 @@ def _encode_chunked(sample: torch.Tensor, total_frames: int, engine_frames: int,
         lat = _encode_single_chunk(chunk, engine_frames, vae=vae, dit_model=dit_model)
         lat_start = start // 4
         result[:, :, lat_start:lat_start + lat_engine] = lat
+        del chunk, lat
+        import gc as _gc
+        _gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     return result
 
 
