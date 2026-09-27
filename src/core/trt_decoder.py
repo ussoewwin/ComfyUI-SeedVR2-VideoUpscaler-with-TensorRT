@@ -58,11 +58,11 @@ _DECODE_LOCK = Lock()
 
 
 def find_engine_path(latent_frames: int) -> tuple[Path | None, int, int]:
-    # Prefer the 512px-tile decoder (matches the encoder tile), then 256px.
+    # Studio standard: VAE decoder is standardized to 256px tile (32 lat px, overlap 12)
+    # for all batch sizes (5f, 9f, 13f, 17f, 21f). 512px tile is preserved as legacy fallback for 5f.
     video_frames = (latent_frames - 1) * 4 + 1
-    # Studio-compatible overlaps: 512px tile -> 24 latent px, 256px tile -> 12 latent px.
-    for tile in (64, 32):
-        overlap = 24 if tile == 64 else 12
+    for tile in (32, 64):
+        overlap = 12 if tile == 32 else 24
         tile_px = tile * 8
         name = f"vae_decoder_tile_{tile_px}_{video_frames}f.rtxplan"
         for d in ARTIFACTS_DIRS:

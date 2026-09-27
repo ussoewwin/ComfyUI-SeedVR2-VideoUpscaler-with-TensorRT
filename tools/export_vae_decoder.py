@@ -65,8 +65,8 @@ def configure_fixed_profile(vae: torch.nn.Module) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--height", type=int, default=512)
-    parser.add_argument("--width", type=int, default=512)
+    parser.add_argument("--height", type=int, default=256)
+    parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--latent-frames", type=int, default=2)
     parser.add_argument("--channels", type=int, default=16)
     parser.add_argument("--dit-model", type=str, default=DEFAULT_DIT)

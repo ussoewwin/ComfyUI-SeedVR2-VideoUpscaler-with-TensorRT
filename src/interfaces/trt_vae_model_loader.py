@@ -188,12 +188,17 @@ def ensure_trt_engine_for_frames(frames: int, vae: torch.nn.Module | None = None
     lat_frames = (frames - 1) // 4 + 1
 
     enc_stem = f"vae_encoder_{frames}f_tile512"
-    dec_stem = f"vae_decoder_tile_256_{frames}f" if frames >= 21 else f"vae_decoder_tile_512_{frames}f"
-    dec_tile_px = 256 if frames >= 21 else 512
+    dec_stem = f"vae_decoder_tile_256_{frames}f"
+    dec_tile_px = 256
     dec_lat_tile = dec_tile_px // 8
 
     enc_eng = ARTIFACTS_DIR / f"{enc_stem}.rtxplan"
     dec_eng = ARTIFACTS_DIR / f"{dec_stem}.rtxplan"
+    # Studio compatibility: if 256_5f does not exist but legacy 512_5f exists, use it
+    if frames == 5 and (not dec_eng.exists() or dec_eng.stat().st_size < 1_000_000):
+        legacy_512 = ARTIFACTS_DIR / "vae_decoder_tile_512_5f.rtxplan"
+        if legacy_512.exists() and legacy_512.stat().st_size > 1_000_000:
+            dec_eng = legacy_512
 
     needs_enc = not enc_eng.exists() or enc_eng.stat().st_size < 1_000_000
     needs_dec = not dec_eng.exists() or dec_eng.stat().st_size < 1_000_000
