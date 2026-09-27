@@ -131,8 +131,9 @@ from .src.interfaces import (
     SeedVR2TorchCompileSettings,
     SeedVR2BuildTensorRTVAE,
     SeedVR2LoadTensorRTVAEDecoder,
+    SeedVR2SaveVideo,
 )
 
-print(f"[SeedVR2] Loaded nodes: SeedVR2VideoUpscaler, SeedVR2LoadTensorRTVAEDecoder (?TRT), SeedVR2BuildTensorRTVAE, SeedVR2LoadVAEModel, SeedVR2LoadDiTModel")
+print(f"[SeedVR2] Loaded nodes: SeedVR2VideoUpscaler, SeedVR2LoadTensorRTVAEDecoder (⚡TRT), SeedVR2BuildTensorRTVAE, SeedVR2LoadVAEModel, SeedVR2LoadDiTModel, SeedVR2SaveVideo")
 
 __all__ = ["comfy_entrypoint", "SeedVR2Extension"]

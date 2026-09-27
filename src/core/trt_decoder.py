@@ -175,6 +175,10 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
         stream.synchronize()
         del warmup_in, warmup_out
 
+        # NOTE (Studio Architecture & Address Safety):
+        # A context's tensor addresses are mutable. For the safe/default path we execute
+        # one tile at a time under _DECODE_LOCK with stream.synchronize() so addresses
+        # cannot be overwritten by a later queued tile.
         for y in ys:
             for x in xs:
                 tile_input = source[:, :, :, y:y + tile, x:x + tile].contiguous()
@@ -196,10 +200,16 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
                 window = (wy[:, None] * wx[None, :]).view(1, 1, 1, out_tile, out_tile)
                 result[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += tile_output.float() * window
                 weights[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += window
+                del tile_input, tile_output
 
     decoded = (result / weights.clamp_min(1e-6)).clamp(-2.0, 2.0)[:, :, :, :out_h, :out_w].to(latent.dtype)
     if _TRT_DEBUG:
         _trt_dbg_stats(f"chunk_out_{video_frames}f", decoded)
+    del source, result, weights
+    import gc as _gc
+    _gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return decoded
 
 
@@ -271,6 +281,11 @@ def _decode_chunked(latent: torch.Tensor, latent_frames: int, engine_video_frame
         sample = _decode_single_chunk(chunk, engine_latent, vae=vae, dit_model=dit_model)
         out_start = start * 4
         result[:, :, out_start:out_start + engine_video_frames] = sample
+        del chunk, sample
+        import gc as _gc
+        _gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     return result
 
 

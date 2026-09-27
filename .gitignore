@@ -40,3 +40,5 @@ wheels/
 temp/
 tmp/
 benchmark/seedvr2_out/
+benchmark/*.log
+benchmark/seeds_*.txt

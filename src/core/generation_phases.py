@@ -541,6 +541,10 @@ def encode_all_batches(
                 )
             
             del cond_latents
+            import gc as _gc
+            _gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
             debug.end_timer(f"encode_batch_{encode_idx+1}", f"Encoded batch {encode_idx+1}")
             
@@ -831,6 +835,10 @@ def upscale_all_batches(
             ctx['all_latents'][batch_idx] = None
             
             del noises, aug_noises, latent, conditions, condition, base_noise, upscaled_latents
+            import gc as _gc
+            _gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
             debug.end_timer(f"upscale_batch_{upscale_idx+1}", f"Upscaled batch {upscale_idx+1}")
             
@@ -1125,6 +1133,10 @@ def decode_all_batches(
             release_tensor_memory(ctx['all_upscaled_latents'][batch_idx])
             ctx['all_upscaled_latents'][batch_idx] = None
             del upscaled_latent, sample
+            import gc as _gc
+            _gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
             debug.end_timer(f"decode_batch_{decode_idx+1}", f"Decoded batch {decode_idx+1}")
             
@@ -1482,6 +1494,10 @@ def postprocess_all_batches(
             
             # Free sample memory
             del sample, sample_thwc
+            import gc as _gc
+            _gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
             debug.end_timer(f"postprocess_batch_{info_idx+1}", f"Post-processed batch {info_idx+1}")
             
