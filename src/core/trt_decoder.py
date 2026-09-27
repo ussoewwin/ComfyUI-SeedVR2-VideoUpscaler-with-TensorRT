@@ -154,23 +154,11 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
 
     source = latent.to(device="cuda", dtype=torch.float16).contiguous()
     video_frames = (latent_frames - 1) * 4 + 1
-
-    # Outer pad = one full tile: creates a sacrificial "virtual area" around all
-    # four edges.  Real image content ends up well past the first tile boundary,
-    # so the receptive-field-poor conv-zero-padding zone AND the reflect
-    # gradient-discontinuity are both deep inside the virtual area — which is
-    # cropped away after decode.  tile//2 was not enough: the reflect mirror
-    # point coincided with the crop boundary, leaving a residual artifact.
-    pad = tile
-    source = torch.nn.functional.pad(source, (pad, pad, pad, pad, 0, 0), mode="reflect")
-    height_p, width_p = height + 2 * pad, width + 2 * pad
-
-    ys, xs = _positions(height_p, tile, overlap), _positions(width_p, tile, overlap)
-    padded_h, padded_w = max(height_p, ys[-1] + tile), max(width_p, xs[-1] + tile)
-    source = torch.nn.functional.pad(source, (0, padded_w - width_p, 0, padded_h - height_p))
+    ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
+    padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
+    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
     out_h, out_w = height * 8, width * 8
     raw_out_h, raw_out_w = padded_h * 8, padded_w * 8
-    offset_px = pad * 8  # pixel offset for cropping the outer pad back out
     result = torch.zeros((1, 3, video_frames, raw_out_h, raw_out_w), device="cuda", dtype=torch.float32)
     weights = torch.zeros_like(result)
     out_tile, out_overlap = tile * 8, overlap * 8
@@ -209,9 +197,7 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
                 result[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += tile_output.float() * window
                 weights[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += window
 
-    composited = (result / weights.clamp_min(1e-6)).clamp(-2.0, 2.0)
-    # Crop the outer replicate-pad back out, then trim to original latent dims
-    decoded = composited[:, :, :, offset_px:offset_px + out_h, offset_px:offset_px + out_w].to(latent.dtype)
+    decoded = (result / weights.clamp_min(1e-6)).clamp(-2.0, 2.0)[:, :, :, :out_h, :out_w].to(latent.dtype)
     if _TRT_DEBUG:
         _trt_dbg_stats(f"chunk_out_{video_frames}f", decoded)
     return decoded
