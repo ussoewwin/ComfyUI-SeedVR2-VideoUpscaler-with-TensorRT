@@ -480,3 +480,68 @@ class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):
             "node_id": node_id,
         }
         return io.NodeOutput(vae_config)
+
+
+class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
+    """Encoder-only TensorRT VAE config (separate engine frame size from the decoder)."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        devices = get_device_list()
+        vae_models = get_available_vae_models()
+        return io.Schema(
+            node_id="SeedVR2LoadTensorRTVAEEncoder",
+            display_name="SeedVR2 Load TensorRT VAE Encoder",
+            category="SEEDVR2",
+            description=(
+                "Encoder-only TensorRT VAE configuration. Accelerates video encoding with "
+                "dedicated TensorRT RTX engines while using standard PyTorch VAE for decoding. "
+                "Connect to the vae input of SeedVR2 Video Upscaler."
+            ),
+            inputs=[
+                io.Combo.Input("model",
+                    options=vae_models,
+                    default=DEFAULT_VAE,
+                    tooltip="VAE model file."
+                ),
+                io.Combo.Input("device",
+                    options=devices,
+                    default=devices[0],
+                    tooltip="GPU device for VAE inference"
+                ),
+                io.Combo.Input("engine_frames",
+                    options=_available_engine_frames("encoder"),
+                    default="auto",
+                    optional=True,
+                    tooltip="TensorRT encoder engine frame size. Auto-populated from artifacts. "
+                            "auto = pick the largest available engine."
+                ),
+            ],
+            outputs=[
+                io.Custom("SEEDVR2_VAE").Output(
+                    tooltip="VAE configuration for the encoder path."
+                )
+            ]
+        )
+
+    @classmethod
+    def execute(cls, model: str, device: str,
+                engine_frames: str = "auto") -> io.NodeOutput:
+        try:
+            from comfy_execution.utils import get_executing_context
+            node_id = get_executing_context().node_id
+        except Exception:
+            node_id = "seedvr2_trt_vae_encoder"
+
+        vae_config: Dict[str, Any] = {
+            "model": model,
+            "device": device,
+            "offload_device": "none",
+            "cache_model": False,
+            "use_tensorrt_vae": False,
+            "use_tensorrt_vae_encode": True,
+            "vae_backend": "tensorrt",
+            "engine_frames": engine_frames,
+            "node_id": node_id,
+        }
+        return io.NodeOutput(vae_config)
