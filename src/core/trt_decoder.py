@@ -142,21 +142,51 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
     if context is None:
         raise RuntimeError("TensorRT could not create a per-batch decoder context")
 
-    # Set input shape for this exact latent batch size
-    context.set_input_shape(input_name, (1, 16, latent_frames, tile, tile))
+    # Studio-compatible shape check: only call set_input_shape if the current shape
+    # actually differs from the target tile shape. Static-shape engines (built for
+    # exact tile sizes) never need set_input_shape called, avoiding TRT's internal
+    # buffer re-allocation/reset which causes the first-tile uninitialized memory glitch.
+    target_shape = (1, 16, latent_frames, tile, tile)
+    current_shape = tuple(context.get_tensor_shape(input_name))
+    if current_shape != target_shape:
+        context.set_input_shape(input_name, target_shape)
+        torch.cuda.synchronize()
 
     source = latent.to(device="cuda", dtype=torch.float16).contiguous()
     video_frames = (latent_frames - 1) * 4 + 1
-    ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
-    padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
-    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
+
+    # Outer pad = one full tile: creates a sacrificial "virtual area" around all
+    # four edges.  Real image content ends up well past the first tile boundary,
+    # so the receptive-field-poor conv-zero-padding zone AND the reflect
+    # gradient-discontinuity are both deep inside the virtual area — which is
+    # cropped away after decode.  tile//2 was not enough: the reflect mirror
+    # point coincided with the crop boundary, leaving a residual artifact.
+    pad = tile
+    source = torch.nn.functional.pad(source, (pad, pad, pad, pad, 0, 0), mode="reflect")
+    height_p, width_p = height + 2 * pad, width + 2 * pad
+
+    ys, xs = _positions(height_p, tile, overlap), _positions(width_p, tile, overlap)
+    padded_h, padded_w = max(height_p, ys[-1] + tile), max(width_p, xs[-1] + tile)
+    source = torch.nn.functional.pad(source, (0, padded_w - width_p, 0, padded_h - height_p))
     out_h, out_w = height * 8, width * 8
     raw_out_h, raw_out_w = padded_h * 8, padded_w * 8
+    offset_px = pad * 8  # pixel offset for cropping the outer pad back out
     result = torch.zeros((1, 3, video_frames, raw_out_h, raw_out_w), device="cuda", dtype=torch.float32)
     weights = torch.zeros_like(result)
     out_tile, out_overlap = tile * 8, overlap * 8
 
     with _DECODE_LOCK, torch.cuda.stream(stream):
+        # Warmup run: forces TensorRT to allocate and bind internal scratchpad memory.
+        # Without this, the very first execution (tile y=0, x=0) reads uninitialized
+        # GPU buffer memory, resulting in severe checkerboard/mosaic artifact in the corner.
+        warmup_in = torch.zeros((1, 16, latent_frames, tile, tile), device="cuda", dtype=torch.float16)
+        warmup_out = torch.zeros((1, 3, video_frames, out_tile, out_tile), device="cuda", dtype=torch.float16)
+        context.set_tensor_address(input_name, warmup_in.data_ptr())
+        context.set_tensor_address(output_name, warmup_out.data_ptr())
+        context.execute_async_v3(stream.cuda_stream)
+        stream.synchronize()
+        del warmup_in, warmup_out
+
         for y in ys:
             for x in xs:
                 tile_input = source[:, :, :, y:y + tile, x:x + tile].contiguous()
@@ -179,7 +209,9 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
                 result[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += tile_output.float() * window
                 weights[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += window
 
-    decoded = (result / weights.clamp_min(1e-6)).clamp(-2.0, 2.0)[:, :, :, :out_h, :out_w].to(latent.dtype)
+    composited = (result / weights.clamp_min(1e-6)).clamp(-2.0, 2.0)
+    # Crop the outer replicate-pad back out, then trim to original latent dims
+    decoded = composited[:, :, :, offset_px:offset_px + out_h, offset_px:offset_px + out_w].to(latent.dtype)
     if _TRT_DEBUG:
         _trt_dbg_stats(f"chunk_out_{video_frames}f", decoded)
     return decoded
