@@ -41,12 +41,14 @@ _TRT_CROP_HW = [-1, -1]
 
 
 def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
-    """Encode a long clip by feeding the TensorRT encoder 29f-sized chunks ONLY.
+    """Encode a video batch with the TensorRT encoder, chunking to engine size.
 
-    The DiT batch (e.g. 185 frames) is split here into engine-sized chunks with a
-    4-frame temporal overlap; the encoder never receives more than engine_frames.
+    Engine selection is based on this batch's actual length (pick_engine_frames),
+    so any available engine (e.g. 5f/21f/29f) is used instead of silently falling
+    back to the fp16 VAE. Batches shorter than the smallest engine are padded to
+    engine size, encoded in 1 shot, then cropped back.
     """
-    from .trt_encoder import encode as trt_encode, resolve_engine_frames
+    from .trt_encoder import encode as trt_encode, pick_engine_frames
     total = enc_sample.shape[2]
     # Pad spatial dims to multiples of 8 so tile boundaries align with latent boundaries.
     h, w = enc_sample.shape[3], enc_sample.shape[4]
@@ -58,28 +60,37 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
     else:
         _TRT_CROP_HW[0], _TRT_CROP_HW[1] = -1, -1
 
-    engine_frames = resolve_engine_frames(engine_frames_setting)
-    if engine_frames is None:
+    engine_video_frames = pick_engine_frames(total, engine_frames_setting)
+    if engine_video_frames is None:
         raise RuntimeError("No TensorRT VAE encoder engine available")
-    if total == engine_frames:
-        return trt_encode(enc_sample, vae=vae, dit_model=dit_model, engine_frames=str(engine_frames))
-    # Stride must stay a multiple of 4 so chunk boundaries align with latent-frame
-    # boundaries. A non-multiple stride (e.g. 81) produces a latent whose 4-frame
-    # window is missing its leading frames -> corrupt/black frames after decode.
-    stride = ((engine_frames - 4) // 4) * 4
+
+    lat_needed = (total - 1) // 4 + 1
+    if total < engine_video_frames:
+        # Batch is shorter than every engine: pad to engine size, 1-shot, crop.
+        pad_len = engine_video_frames - total
+        last_frame = enc_sample[:, :, -1:, :, :].repeat(1, 1, pad_len, 1, 1)
+        padded = torch.cat([enc_sample, last_frame], dim=2)
+        lat = trt_encode(padded, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        return lat[:, :, :lat_needed]
+
+    if total == engine_video_frames:
+        return trt_encode(enc_sample, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+
+    # Chunked encoding for batches longer than engine
+    stride = ((engine_video_frames - 4) // 4) * 4
     if stride < 4:
         stride = 4
     lat_parts = []
-    starts = list(range(0, total - engine_frames + 1, stride))
-    if starts[-1] != total - engine_frames:
-        starts.append(total - engine_frames)
+    starts = list(range(0, total - engine_video_frames + 1, stride))
+    if starts[-1] != total - engine_video_frames:
+        starts.append(total - engine_video_frames)
     for start in starts:
-        chunk = enc_sample[:, :, start:start + engine_frames].contiguous()
-        lat = trt_encode(chunk, vae=vae, dit_model=dit_model, engine_frames=str(engine_frames))
+        chunk = enc_sample[:, :, start:start + engine_video_frames].contiguous()
+        lat = trt_encode(chunk, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
         lat_parts.append((lat, start // 4))
-    lat_total = (total - 1) // 4 + 1
+
     lat0 = lat_parts[0][0]
-    latent = torch.zeros((1, 16, lat_total, lat0.shape[3], lat0.shape[4]), device=lat0.device, dtype=lat0.dtype)
+    latent = torch.zeros((1, 16, lat_needed, lat0.shape[3], lat0.shape[4]), device=lat0.device, dtype=lat0.dtype)
     # Causal encoder: a chunk's leading latents (context-poor) are LESS accurate than
     # the previous chunk's trailing latents (full context). So earlier chunks win.
     # Write in reverse so the first chunk keeps its (accurate) values.

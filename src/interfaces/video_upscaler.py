@@ -402,11 +402,12 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
         )
         if _use_trt_vae:
             try:
-                from ..core.trt_encoder import resolve_engine_frames
-                if resolve_engine_frames() is not None:
+                from ..core.trt_encoder import resolve_engine_frames as res_enc
+                from ..core.trt_decoder import resolve_engine_frames as res_dec
+                if res_enc() is not None or res_dec() is not None:
                     vae_torch_compile_args = None  # TRT エンジン利用可能 → compile スキップ
             except Exception:
-                pass  # TRT 判定不能なら compile を残す（保険）
+                pass
         
         # Print header
         debug.print_header()

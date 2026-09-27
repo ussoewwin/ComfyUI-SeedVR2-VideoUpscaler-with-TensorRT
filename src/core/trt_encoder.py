@@ -5,6 +5,7 @@ Executes exact 1-shot TensorRT acceleration for ANY batch size.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from threading import Lock
 
@@ -220,19 +221,55 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     return encoded
 
 
-def _pick_engine_frames(total_frames: int, preferred: str = "auto") -> int | None:
-    """Pick the engine frame size. preferred (from the loader dropdown) wins if its engine exists."""
+_ENGINE_FILE_RE = re.compile(r"^vae_encoder_(\d+)f_tile\d+\.rtxplan$")
+
+
+def _available_engine_frames() -> list[int]:
+    """Return the sorted video-frame sizes of every usable encoder engine on disk."""
+    found: set[int] = set()
+    for d in ARTIFACTS_DIRS:
+        try:
+            if not d.is_dir():
+                continue
+            for p in d.iterdir():
+                m = _ENGINE_FILE_RE.match(p.name)
+                if m and p.is_file():
+                    try:
+                        if p.stat().st_size > 1_000_000:
+                            found.add(int(m.group(1)))
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return sorted(found)
+
+
+def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None:
+    """Pick the encoder engine frame size for a video of `video_frames` frames.
+
+    Selection order:
+    1. preferred (from the loader dropdown / settings node) if that engine exists;
+    2. an engine matching video_frames exactly (1-shot encode);
+    3. the largest engine that fits inside video_frames (chunked encode);
+    4. if every engine is larger than the clip, the smallest engine (encode pads/crops);
+    5. None only when no engine exists at all.
+    """
+    engines = _available_engine_frames()
+    if not engines:
+        return None
     if preferred != "auto":
         try:
             cand = int(preferred)
-            if find_engine_path(cand)[0] is not None:
+            if cand in engines:
                 return cand
         except ValueError:
             pass
-    for cand in (total_frames, 29, 21, 17, 13, 9, 5):
-        if find_engine_path(cand)[0] is not None:
-            return cand
-    return None
+    if video_frames in engines:
+        return video_frames
+    fits = [e for e in engines if e <= video_frames]
+    if fits:
+        return fits[-1]
+    return engines[0]
 
 
 @torch.inference_mode()
@@ -283,20 +320,39 @@ def encode(sample: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: 
         sample = torch.cat([sample, last_frame], dim=2)
         total_frames = req_frames
 
-    engine_frames = _pick_engine_frames(total_frames, engine_frames)
-    if engine_frames is None:
+    engine_video_frames = pick_engine_frames(total_frames, engine_frames)
+    if engine_video_frames is None:
         raise FileNotFoundError("No TensorRT VAE encoder engine found (need vae_encoder_{5,9,13,17,21,29}f_tile512.rtxplan)")
-    if engine_frames == total_frames:
-        print(f"[SeedVR2 TensorRT] Encoding {engine_frames}f in 1 shot with dedicated {engine_frames}f TensorRT engine...")
+    if engine_video_frames > total_frames:
+        # The clip is shorter than every available engine: pad the video to the
+        # engine size, encode in 1 shot, then crop back to the actual latent length.
+        pad_len = engine_video_frames - total_frames
+        last_frame = sample[:, :, -1:, :, :].repeat(1, 1, pad_len, 1, 1)
+        padded = torch.cat([sample, last_frame], dim=2)
+        encoded = _encode_single_chunk(padded, engine_video_frames, vae=vae, dit_model=dit_model)
+        lat_needed = (total_frames - 1) // 4 + 1
+        return encoded[:, :, :lat_needed]
+    if engine_video_frames == total_frames:
+        print(f"[SeedVR2 TensorRT] Encoding {engine_video_frames}f in 1 shot with dedicated {engine_video_frames}f TensorRT engine...")
         return _encode_single_chunk(sample, total_frames, vae=vae, dit_model=dit_model)
-    n_chunks = (total_frames + engine_frames - 5) // (engine_frames - 4)
-    print(f"[SeedVR2 TensorRT] Encoding {n_chunks} chunks of {engine_frames}f with TensorRT engine (4-frame temporal overlap)...")
-    return _encode_chunked(sample, total_frames, engine_frames, vae=vae, dit_model=dit_model)
+    n_chunks = (total_frames + engine_video_frames - 5) // (engine_video_frames - 4)
+    print(f"[SeedVR2 TensorRT] Encoding {n_chunks} chunks of {engine_video_frames}f with TensorRT engine (4-frame temporal overlap)...")
+    return _encode_chunked(sample, total_frames, engine_video_frames, vae=vae, dit_model=dit_model)
 
 
 def resolve_engine_frames(preferred: str = "auto") -> int | None:
-    """Return the largest available encoder engine frame size (for chunking)."""
-    return _pick_engine_frames(29, preferred)
+    """Return the largest available encoder engine video-frame size (for chunking)."""
+    engines = _available_engine_frames()
+    if not engines:
+        return None
+    if preferred != "auto":
+        try:
+            cand = int(preferred)
+            if cand in engines:
+                return cand
+        except ValueError:
+            pass
+    return engines[-1]
 
 
 def release() -> None:

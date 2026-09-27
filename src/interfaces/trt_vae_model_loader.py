@@ -45,21 +45,23 @@ def _available_engine_frames(kind: str = "encoder") -> list[str]:
     import re
     frames = set()
     pattern = "vae_encoder_*f_tile*.rtxplan" if kind == "encoder" else "vae_decoder_tile_*_*f.rtxplan"
-    try:
-        if ARTIFACTS_DIR.is_dir():
-            for pth in ARTIFACTS_DIR.glob(pattern):
-                if kind == "encoder":
-                    m = re.search(r"_(\d+)f_tile", pth.name)
-                else:
-                    m = re.search(r"_(\d+)f\.rtxplan", pth.name)
-                if m:
-                    n = int(m.group(1))
-                    # Only 4n+1 frame counts are valid (the exporter normalizes to 4n+1,
-                    # so e.g. a file named 195f actually contains a 193f graph).
-                    if (n - 1) % 4 == 0:
-                        frames.add(str(n))
-    except Exception:
-        pass
+    search_dirs = [ARTIFACTS_DIR, ROOT.parents[1] / "models" / "tensorrt" / "seedvr2"]
+    for d in search_dirs:
+        try:
+            if d.is_dir():
+                for pth in d.glob(pattern):
+                    if kind == "encoder":
+                        m = re.search(r"_(\d+)f_tile", pth.name)
+                    else:
+                        m = re.search(r"_(\d+)f\.rtxplan", pth.name)
+                    if m:
+                        n = int(m.group(1))
+                        # Only 4n+1 frame counts are valid (the exporter normalizes to 4n+1,
+                        # so e.g. a file named 195f actually contains a 193f graph).
+                        if (n - 1) % 4 == 0:
+                            frames.add(str(n))
+        except Exception:
+            pass
     return ["auto"] + sorted(frames, key=int, reverse=True)
 
 
