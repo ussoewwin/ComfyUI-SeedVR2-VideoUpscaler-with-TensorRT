@@ -9,6 +9,13 @@
 
 Fork release history.
 
+## v1.5.4 — 2026-09-27
+- **Summary:** Completely resolved top-left mosaic/checkerboard decoding artifacts in the TensorRT VAE Decoder on landscape videos without VRAM inflation:
+  - **Studio-Compatible Static Shape Check:** Only invoke `context.set_input_shape` when the current shape actually differs from the target tile shape. Static-shape engines now bypass redundant reconfigurations, preventing TRT's internal scratchpad buffer reallocations that previously ingested dirty VRAM.
+  - **Deterministic Dummy Warmup Execution:** Executed a single zero-filled dummy inference pass before the spatial tiling loop. This forces TensorRT to sanitize all internal convolution workspaces and temporal accumulator lines, eliminating dirty memory reads on the first tile (`y=0, x=0`).
+  - **Zero VRAM Bloat Architecture:** Avoided spatial outer padding that would otherwise inflate float32 accumulation buffers (`result` and `weights`) by 2x–3x VRAM, preserving native resolution decoding speed and minimal VRAM consumption.
+- **Technical Details:** See [v1.5.4 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.4) for complete explanation
+
 ## v1.5.3 — 2026-09-09
 - **Summary:** TensorRT VAE Encoder activation attempt unsuccessful; FP16 VAE encoding kept unchanged:
   - **TensorRT VAE Encoder:** `SeedVR2LoadTensorRTVAEModel` was registered during an activation attempt and has been removed again — the TensorRT encoder's top-left tiling artifact could not be resolved at either 256px or 512px tile size. `SeedVR2LoadTensorRTVAEDecoder` (decode-only TRT) and `SeedVR2BuildTensorRTVAE` remain available. A batched one-shot variant of the FP16 encode path was also evaluated and reverted (it reproduced the blur on FP16); the per-frame loop remains the FP16 encode implementation.
