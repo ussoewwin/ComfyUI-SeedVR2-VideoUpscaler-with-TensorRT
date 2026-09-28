@@ -1,11 +1,5 @@
 # SeedVR2 Video Upscaler — Technical Guide: Three Core Improvements and Encoder Refactoring
 
-<table align="center">
-  <tr>
-    <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>EN</b></font></td>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="../zhmd/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md"><font color="#4b5563"><b>中文</b></font></a></td>
-  </tr>
-</table>
 
 Target custom node: `ComfyUI/custom_nodes/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder`  
 Target core modules: `src/interfaces/video_save.py`, `src/core/trt_decoder.py`, `src/core/trt_encoder.py`, `src/core/infer.py`, `src/core/generation_phases.py`, `src/interfaces/trt_vae_model_loader.py`
