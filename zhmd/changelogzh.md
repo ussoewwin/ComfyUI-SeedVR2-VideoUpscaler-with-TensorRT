@@ -10,8 +10,13 @@
 Fork 发行历史。
 
 ## v1.5.5 — 2026-09-28
-- **摘要：** 引入 Studio 生产环境改进（FFmpeg CFR 严格恒定帧率与时间戳整流彻底根除音画不同步及播放末端卡死、ExecutionContext 显存地址锁定与单瓦片同步防止黑块损坏、全流程三阶段显存深度清理）及 TensorRT VAE 编码器全面重构（移植 v1.5.4 静态形状守卫/虚拟预热/局部填充、短批次末尾填充裁剪 1-Shot 极速执行、彻底消除静默回退并引入严格报错、完全对称的 `SeedVR2LoadTensorRTVAEEncoder` 节点）。
-- **技术详情：** 参见 [v1.5.5 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) 获取完整说明
+- **摘要：** 生产环境稳定性改进与 TensorRT VAE 编码器全面重构：
+  - **FFmpeg CFR 时间戳整流：** 彻底根除视频合并时的音画不同步及播放末端卡死。
+  - **ExecutionContext 地址安全：** 引入互斥锁与流同步，杜绝显存覆盖与黑块损坏。
+  - **确定性显存深度清理：** 全流程应用三阶段内存回收，消除显存碎片堆积。
+  - **TensorRT VAE 编码器重构：** 移植 v1.5.4 伪影与显存修复基盘、短批次 Pad & Crop 极速单次执行、彻底移除静默降级，并引入对称的 `SeedVR2LoadTensorRTVAEEncoder` 节点。
+- **技术详情：** 请参阅 [v1.5.5 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) 获取完整说明
+
 
 ## v1.5.4 — 2026-09-27
 - **摘要：** 彻底修复横屏视频下 TensorRT VAE 解码器左上角马赛克/棋盘格伪影问题，且零显存膨胀：

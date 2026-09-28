@@ -10,8 +10,13 @@
 Fork release history.
 
 ## v1.5.5 — 2026-09-28
-- **Summary:** Applied Studio production improvements (FFmpeg CFR timestamp rectification eliminating audio drift and endpoint freeze, ExecutionContext address protection with lock/sync preventing corrupted tiles, tri-partite memory cleanup) and comprehensive TensorRT VAE Encoder refactoring (ported v1.5.4 shape guard/dummy warmup/local padding, short-batch pad & crop 1-shot execution, eliminated silent FP16 fallbacks, and symmetrical `SeedVR2LoadTensorRTVAEEncoder` node).
+- **Summary:** Production reliability improvements and comprehensive TensorRT VAE Encoder refactoring:
+  - **FFmpeg CFR & Timestamp Rectification:** Eliminated video/audio desynchronization and endpoint freeze during video assembly.
+  - **ExecutionContext Address Safety:** Enforced lock and stream synchronization to prevent memory overwrite and black tile corruption.
+  - **Deterministic Memory Cleanup:** Applied tri-partite reclamation (`del`, `gc`, `empty_cache`) across loops to prevent VRAM fragmentation.
+  - **TensorRT VAE Encoder Refactoring:** Ported v1.5.4 artifact/VRAM fixes, added short-batch pad & crop 1-shot execution, removed silent FP16 fallbacks, and symmetrically added `SeedVR2LoadTensorRTVAEEncoder`.
 - **Technical Details:** See [v1.5.5 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) for complete explanation
+
 
 
 ## v1.5.4 — 2026-09-27
