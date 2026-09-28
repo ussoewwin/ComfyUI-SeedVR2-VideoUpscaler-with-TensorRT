@@ -9,6 +9,10 @@
 
 Fork 发行历史。
 
+## v1.5.5 — 2026-09-28
+- **摘要：** 引入 Studio 生产环境改进（FFmpeg CFR 严格恒定帧率与时间戳整流彻底根除音画不同步及播放末端卡死、ExecutionContext 显存地址锁定与单瓦片同步防止黑块损坏、全流程三阶段显存深度清理）及 TensorRT VAE 编码器全面重构（移植 v1.5.4 静态形状守卫/虚拟预热/局部填充、短批次末尾填充裁剪 1-Shot 极速执行、彻底消除静默回退并引入严格报错、完全对称的 `SeedVR2LoadTensorRTVAEEncoder` 节点）。
+- **技术详情：** 参见 [v1.5.5 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) 获取完整说明
+
 ## v1.5.4 — 2026-09-27
 - **摘要：** 彻底修复横屏视频下 TensorRT VAE 解码器左上角马赛克/棋盘格伪影问题，且零显存膨胀：
   - **对齐 Studio 的静态形状判定：** 仅在当前形状与目标分块形状不符时才调用 `context.set_input_shape`。静态形状引擎完全跳过冗余重构，防止 TRT 内部暂存区缓冲区重新分配并抓取前序脏显存。
