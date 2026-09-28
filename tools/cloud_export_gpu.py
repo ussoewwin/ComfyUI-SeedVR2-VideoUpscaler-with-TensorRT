@@ -12,6 +12,10 @@ OOM strategy (--device auto, default):
        (reference) graph;
     3) last resort: CPU float16 trace (system RAM, CUDA hidden).  Very slow.
 
+The managed allocator library is built WITHOUT any CUDA headers or link-time
+CUDA libraries: it resolves cudaMallocManaged/cudaFree at runtime via dlopen,
+so a plain C compiler is the only requirement.
+
 If --allocator managed cannot be built, the process FAILS FAST (no silent CPU
 fallback) so the cause is visible in the log.
 
@@ -43,20 +47,56 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "garbage_collection_threshold:0
 import torch
 import yaml
 
-# NOTE: no <cuda_runtime.h> on purpose - the two runtime functions are declared
-# by hand so the build works even when only partial CUDA headers are installed
-# (the pip nvidia packages ship cuda_runtime.h without crt/host_config.h).
+# No CUDA headers, no link-time CUDA libs: cudaMallocManaged/cudaFree are
+# resolved at runtime with dlopen, so this builds on any machine with a C
+# compiler and works with whichever libcudart the process already has loaded
+# (falls back to dlopen("libcudart.so.13"/".so.12"/".so")).
 _MANAGED_ALLOC_SRC = r"""
 #include <cstddef>
+#include <dlfcn.h>
 
 typedef struct CUstream_st* cudaStream_t;
-extern "C" int cudaMallocManaged(void** devPtr, std::size_t size, unsigned int flags);
-extern "C" int cudaFree(void* devPtr);
+typedef int (*seedvr2_malloc_managed_fn)(void**, std::size_t, unsigned int);
+typedef int (*seedvr2_free_fn)(void*);
+
+static seedvr2_malloc_managed_fn seedvr2_p_malloc = nullptr;
+static seedvr2_free_fn seedvr2_p_free = nullptr;
+
+static void seedvr2_resolve(void) {
+    if (seedvr2_p_malloc != nullptr && seedvr2_p_free != nullptr) {
+        return;
+    }
+    seedvr2_p_malloc = (seedvr2_malloc_managed_fn)dlsym(RTLD_DEFAULT, "cudaMallocManaged");
+    seedvr2_p_free = (seedvr2_free_fn)dlsym(RTLD_DEFAULT, "cudaFree");
+    if (seedvr2_p_malloc != nullptr && seedvr2_p_free != nullptr) {
+        return;
+    }
+    const char* names[] = {"libcudart.so.13", "libcudart.so.12", "libcudart.so", nullptr};
+    for (int i = 0; names[i] != nullptr; ++i) {
+        void* h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
+        if (h == nullptr) {
+            continue;
+        }
+        if (seedvr2_p_malloc == nullptr) {
+            seedvr2_p_malloc = (seedvr2_malloc_managed_fn)dlsym(h, "cudaMallocManaged");
+        }
+        if (seedvr2_p_free == nullptr) {
+            seedvr2_p_free = (seedvr2_free_fn)dlsym(h, "cudaFree");
+        }
+        if (seedvr2_p_malloc != nullptr && seedvr2_p_free != nullptr) {
+            return;
+        }
+    }
+}
 
 extern "C" void* seedvr2_managed_malloc(std::size_t size, int device, cudaStream_t stream) {
     (void)device; (void)stream;
+    seedvr2_resolve();
+    if (seedvr2_p_malloc == nullptr) {
+        return nullptr;
+    }
     void* p = nullptr;
-    if (cudaMallocManaged(&p, size, 1u /* cudaMemAttachGlobal */) != 0) {
+    if (seedvr2_p_malloc(&p, size, 1u /* cudaMemAttachGlobal */) != 0) {
         return nullptr;
     }
     return p;
@@ -64,8 +104,9 @@ extern "C" void* seedvr2_managed_malloc(std::size_t size, int device, cudaStream
 
 extern "C" void seedvr2_managed_free(void* ptr, std::size_t size, int device, cudaStream_t stream) {
     (void)size; (void)device; (void)stream;
-    if (ptr != nullptr) {
-        cudaFree(ptr);
+    seedvr2_resolve();
+    if (seedvr2_p_free != nullptr && ptr != nullptr) {
+        seedvr2_p_free(ptr);
     }
 }
 """
@@ -79,80 +120,60 @@ def _install_managed_allocator() -> bool:
     uses" an RTX 5090 together with a large amount of host RAM).
     """
     import ctypes
-    import glob as _glob
 
     so_path: str | None = None
 
-    # 1) Build the tiny shared library with torch's cpp_extension (knows all paths).
+    # 1) Compile the tiny library directly (no headers, no CUDA libs needed).
     try:
-        from torch.utils.cpp_extension import _get_build_directory, load_inline
+        import tempfile
 
-        try:
-            load_inline(
-                name="seedvr2_managed_alloc",
-                cpp_sources=_MANAGED_ALLOC_SRC,
-                is_python_module=False,
-                with_cuda=True,
-                verbose=False,
-                extra_cflags=["-O2"],
+        src_dir = Path(tempfile.mkdtemp())
+        src_file = src_dir / "seedvr2_managed_alloc.cpp"
+        src_file.write_text(_MANAGED_ALLOC_SRC, encoding="utf-8")
+        out_so = src_dir / "seedvr2_managed_alloc.so"
+        last_err = ""
+        for cc in ("gcc", "cc", "g++", "clang++"):
+            r = subprocess.run(
+                [cc, "-shared", "-fPIC", "-O2", "-o", str(out_so), str(src_file), "-ldl"],
+                capture_output=True, text=True,
             )
-        except Exception as exc:
-            print(f"[MEM] cpp_extension build/import failed ({exc}); checking build dir...", flush=True)
-        try:
-            build_dir = Path(_get_build_directory("seedvr2_managed_alloc", verbose=False))
-            sos = sorted(build_dir.glob("**/*.so"))
-            if sos:
-                so_path = str(sos[-1])
-                print(f"[MEM] found built allocator library: {so_path}", flush=True)
-        except Exception as exc:
-            print(f"[MEM] could not locate build dir: {exc}", flush=True)
-    except Exception as exc:
-        print(f"[MEM] cpp_extension unavailable ({exc}); trying direct gcc...", flush=True)
-
-    # 2) Fallback: compile with gcc (no CUDA headers needed) and link libcudart.
-    if so_path is None:
-        try:
-            import site as _site
-            import subprocess as _sp
-            import tempfile
-
-            search_roots: list[Path] = []
-            try:
-                search_roots += [Path(sp) for sp in _site.getsitepackages()]
-            except Exception:
-                pass
-            try:
-                search_roots.append(Path(_site.getusersitepackages()))
-            except Exception:
-                pass
-            search_roots.append(Path(torch.__file__).resolve().parent.parent)
-
-            lib_candidates: list[str] = []
-            for root in search_roots:
-                lib_candidates += _glob.glob(str(root / "nvidia" / "**" / "lib" / "libcudart.so*"), recursive=True)
-            lib_candidates += _glob.glob("/usr/local/cuda*/lib64/libcudart.so*")
-            lib_candidates += _glob.glob("/usr/lib/x86_64-linux-gnu/libcudart.so*")
-            lib_path = next((c for c in lib_candidates if os.path.isfile(c)), None)
-            print(f"[MEM] libcudart: {lib_path}", flush=True)
-
-            src_dir = Path(tempfile.mkdtemp())
-            src_file = src_dir / "seedvr2_managed_alloc.cpp"
-            src_file.write_text(_MANAGED_ALLOC_SRC, encoding="utf-8")
-            out_so = src_dir / "seedvr2_managed_alloc.so"
-            cmd = ["gcc", "-shared", "-fPIC", "-O2", "-o", str(out_so), str(src_file)]
-            if lib_path:
-                cmd.append(lib_path)
-                cmd += ["-Wl,-rpath," + str(Path(lib_path).parent)]
-            else:
-                cmd += ["-lcudart"]
-            r = _sp.run(cmd, capture_output=True, text=True)
             if r.returncode == 0 and out_so.exists():
                 so_path = str(out_so)
-                print(f"[MEM] gcc built allocator library: {so_path}", flush=True)
-            else:
-                print(f"[MEM] gcc build failed: {(r.stderr or '').strip()[:400]}", flush=True)
+                print(f"[MEM] built allocator library with {cc}: {so_path}", flush=True)
+                break
+            last_err = (r.stderr or "").strip()[:300]
+        if so_path is None:
+            print(f"[MEM] direct compile failed: {last_err}", flush=True)
+    except Exception as exc:
+        print(f"[MEM] direct compile path failed: {exc}", flush=True)
+
+    # 2) Fallback: torch's cpp_extension (finds headers/libs on its own).
+    if so_path is None:
+        try:
+            from torch.utils.cpp_extension import _get_build_directory, load_inline
+
+            try:
+                load_inline(
+                    name="seedvr2_managed_alloc",
+                    cpp_sources=_MANAGED_ALLOC_SRC,
+                    is_python_module=False,
+                    with_cuda=True,
+                    verbose=False,
+                    extra_cflags=["-O2", "-fvisibility=default"],
+                    extra_ldflags=["-ldl"],
+                )
+            except Exception as exc:
+                print(f"[MEM] cpp_extension build/import failed ({exc}); checking build dir...", flush=True)
+            try:
+                build_dir = Path(_get_build_directory("seedvr2_managed_alloc", verbose=False))
+                sos = sorted(build_dir.glob("**/*.so"))
+                if sos:
+                    so_path = str(sos[-1])
+                    print(f"[MEM] found built allocator library: {so_path}", flush=True)
+            except Exception as exc:
+                print(f"[MEM] could not locate build dir: {exc}", flush=True)
         except Exception as exc:
-            print(f"[MEM] direct gcc path failed: {exc}", flush=True)
+            print(f"[MEM] cpp_extension unavailable ({exc})", flush=True)
 
     if so_path is None:
         return False
@@ -164,6 +185,13 @@ def _install_managed_allocator() -> bool:
     except Exception as exc:
         print(f"[MEM] allocator symbols not found in {so_path}: {exc}", flush=True)
         return False
+
+    # Sanity check that the CUDA runtime symbols can be resolved (informational).
+    try:
+        probe = ctypes.CDLL(so_path)
+        probe.seedvr2_managed_malloc
+    except Exception:
+        pass
 
     try:
         from torch.cuda.memory import CUDAPluggableAllocator, change_current_allocator
