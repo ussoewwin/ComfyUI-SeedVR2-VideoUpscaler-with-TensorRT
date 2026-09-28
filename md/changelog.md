@@ -9,6 +9,17 @@
 
 Fork release history.
 
+## v1.5.5 — 2026-09-28
+- **Summary:** Three core production improvements (FFmpeg CFR timestamp rectification, TRT ExecutionContext address protection, tri-partite memory cleanup) and comprehensive TensorRT VAE Encoder refactoring:
+  - **FFmpeg CFR Timestamp Rectification (Eradication of Audio Drift & Freeze):** Integrated Studio's production FFmpeg flags (`-fflags +genpts -avoid_negative_ts make_zero -fps_mode cfr`) across video encoding and audio muxing in `SeedVR2SaveVideo`, regenerating PTS, locking to strict Constant Frame Rate (CFR), and normalizing timestamps to zero.
+  - **ExecutionContext Mutable Address Protection:** Enforced mutual exclusion locks (`_DECODE_LOCK` / `_ENCODE_LOCK`) and per-tile synchronous execution (`stream.synchronize()`), guaranteeing tensor address immutability during active kernel dispatch and preventing memory overwrite artifacts (black/gray tiles).
+  - **Deterministic Tri-Partite Memory Reclamation:** Applied systematic memory cleanup (`del` + `gc.collect()` + `torch.cuda.empty_cache()`) across all generation phases (Phase 1, Phase 2, Phase 3) and TRT chunk loops to eliminate VRAM fragmentation on extended renders.
+  - **Ported v1.5.4 Architecture to TRT Encoder:** Integrated static shape check guard (`current_shape != target_shape`), deterministic dummy warmup pass (priming 3D causal accumulator state lines to eradicate top-left mosaic artifacts), and local tile padding (eliminating 2x–3x Float32 accumulation memory bloat).
+  - **Short-Batch Pad & Crop 1-Shot Execution:** Clips shorter than engine frame counts (e.g. `batch_size=5` with 21f engine) are padded via last-frame replication, executed at 1-shot TRT speed, and cropped to true latent length, eliminating legacy `IndexError` on slice bounds.
+  - **Fail-Fast Integrity (Zero Silent FP16 Fallback):** Replaced deceptive `try...except` silent fallbacks with explicit, immediate `RuntimeError` dispatch when TRT dependencies or engines are missing.
+  - **Dynamic Multi-Directory Engine Discovery & Node Symmetry:** Automatically discovers arbitrary 4n+1 engines across `tensorrt_backend/artifacts` and `models/tensorrt/seedvr2`, symmetrically renaming `SeedVR2LoadTensorRTVAEEncoder` with `SeedVR2LoadTensorRTVAEDecoder` while retaining `SeedVR2LoadTensorRTVAEModel` as a backward compatibility alias.
+- **Technical Details:** See [v1.5.5 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) for complete explanation
+
 ## v1.5.4 — 2026-09-27
 - **Summary:** Completely resolved top-left mosaic/checkerboard decoding artifacts in the TensorRT VAE Decoder on landscape videos without VRAM inflation:
   - **Studio-Compatible Static Shape Check:** Only invoke `context.set_input_shape` when the current shape actually differs from the target tile shape. Static-shape engines now bypass redundant reconfigurations, preventing TRT's internal scratchpad buffer reallocations that previously ingested dirty VRAM.
