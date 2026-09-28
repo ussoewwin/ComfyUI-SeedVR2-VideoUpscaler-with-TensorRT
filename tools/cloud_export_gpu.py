@@ -6,10 +6,11 @@ to minutes, avoiding the slow CPU trace and the local 16GB VRAM limit.
 
 CPU offload (cloud): with --device auto (default) the GPU trace is attempted first
 and, on CUDA OutOfMemory, the export automatically falls back to a CPU float16
-trace that uses system RAM (CUDA hidden). The CPU path keeps the SAME unchunked
-graph as the GPU path by default (so the ONNX matches the GPU trace), and
---cpu-conv-limit-gb can bound system RAM with Conv3d chunking (same mechanism as
-tools/export_onnx_worker.py) on machines with less RAM.
+trace that uses system RAM (CUDA hidden). The CPU path bounds RAM with Conv3d
+chunking (default 16 GB, the same mechanism as tools/export_onnx_worker.py);
+pass --cpu-conv-limit-gb 0 to disable chunking and keep the exact GPU graph
+(then the whole conv runs at once, which needs a very large amount of RAM and
+can appear to hang while swapping).
 
 The produced ONNX is GPU-independent. Build the engine with cloud_build_engine.py
 on any Blackwell (sm_120) GPU, or locally on the RTX 5060 Ti.
@@ -17,7 +18,7 @@ on any Blackwell (sm_120) GPU, or locally on the RTX 5060 Ti.
 Usage:
     python tools/cloud_export_gpu.py --repo <custom_node_root> \
         --kind encoder --frames 185 --output <onnx_path> [--model ema_vae_fp16.safetensors] \
-        [--device auto|cuda|cpu] [--cpu-conv-limit-gb 0]
+        [--device auto|cuda|cpu] [--cpu-conv-limit-gb 16]
 """
 
 from __future__ import annotations
@@ -101,9 +102,10 @@ def main() -> int:
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
                         help="auto = GPU first, fall back to CPU fp16 (system RAM) on CUDA OOM; "
                              "cuda = GPU only; cpu = CPU only (CUDA hidden)")
-    parser.add_argument("--cpu-conv-limit-gb", type=float, default=0.0,
-                        help="Conv3d memory limit (GB) for the CPU trace path only. "
-                             "0 = no chunking (keeps the same graph as the GPU trace).")
+    parser.add_argument("--cpu-conv-limit-gb", type=float, default=16.0,
+                        help="Conv3d chunk size (GB) for the CPU trace path only (default 16, like "
+                             "export_onnx_worker.py). 0 = no chunking (keeps the exact GPU graph, but "
+                             "the whole conv runs at once and needs a very large amount of system RAM).")
     args = parser.parse_args()
 
     cuda_available = torch.cuda.is_available()
@@ -159,22 +161,26 @@ def main() -> int:
     vae = vae.to(device=load_dev, dtype=torch.float16).eval()
     configure_fixed_vae(vae)
 
-    # GPU trace keeps the original Studio-compatible graph (no conv/norm chunking:
-    # chunked graphs blow up the mid_block attention QK^T tensor and trip the TRT
-    # element-count limit).  The CPU path also defaults to the same unchunked graph;
-    # --cpu-conv-limit-gb > 0 switches the CPU path to bounded Conv3d chunking.
-    cpu_conv_limit = float(args.cpu_conv_limit_gb) if (args.cpu_conv_limit_gb and args.cpu_conv_limit_gb > 0) else float("inf")
+    # GPU path keeps the original Studio-compatible graph (no conv/norm chunking:
+    # chunked graphs can bloat the mid_block attention QK^T tensor and trip the TRT
+    # element-count limit).  The CPU path uses Conv3d chunking (see --cpu-conv-limit-gb)
+    # to bound system RAM, exactly like tools/export_onnx_worker.py.
     from src.models.video_vae_v3.modules.global_config import set_norm_limit
-    if cpu_conv_limit == float("inf"):
-        set_norm_limit(float("inf"))
+    set_norm_limit(float("inf"))
     _dbg = Debug(enabled=False)
-    for _module in vae.modules():
-        if isinstance(_module, InflatedCausalConv3d):
-            _module.set_memory_limit(cpu_conv_limit)
-        _module.debug = _dbg
+
+    def _apply_conv_limits(value: float) -> None:
+        for _m in vae.modules():
+            if isinstance(_m, InflatedCausalConv3d):
+                _m.set_memory_limit(value)
+            _m.debug = _dbg
+
+    _apply_conv_limits(float("inf"))
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+    cpu_conv_limit = float(args.cpu_conv_limit_gb) if (args.cpu_conv_limit_gb and args.cpu_conv_limit_gb > 0) else float("inf")
 
     frames = ((args.frames - 1) // 4) * 4 + 1
     lat_frames = (frames - 1) // 4 + 1
@@ -197,7 +203,9 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     def _export_cpu() -> None:
-        print(f"[CPU-offload] Tracing {frames}f {args.kind} ONNX on CPU fp16 (system RAM, CUDA hidden)...", flush=True)
+        limit_txt = "no chunking" if cpu_conv_limit == float("inf") else f"Conv3d chunk {cpu_conv_limit:g} GB"
+        print(f"[CPU-offload] Tracing {frames}f {args.kind} ONNX on CPU fp16 (system RAM, CUDA hidden; {limit_txt})...", flush=True)
+        _apply_conv_limits(cpu_conv_limit)
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
