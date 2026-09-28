@@ -45,21 +45,20 @@ def _math_attention_context():
 
 def _portable_export(module: torch.nn.Module, args: tuple[torch.Tensor, ...], output: Path, *, legacy: bool, dynamic_axes: dict | None = None) -> None:
     is_encoder = args[0].ndim == 5 and args[0].shape[1] == 3
+    export_kwargs: dict = dict(
+        input_names=["video"] if is_encoder else ["latent"],
+        output_names=["latent_raw"] if is_encoder else ["sample"],
+        opset_version=20,
+        dynamo=not legacy,
+        dynamic_axes=dynamic_axes,
+    )
+    if legacy:
+        # legacy-only knobs; the dynamo exporter may reject them
+        export_kwargs.update(optimize=False, do_constant_folding=False)
     with torch.inference_mode(), torch.no_grad(), _math_attention_context():
         # Free traced intermediates before graph serialization to cap commit growth.
         gc.collect()
-        torch.onnx.export(
-            module,
-            args,
-            str(output),
-            input_names=["video"] if is_encoder else ["latent"],
-            output_names=["latent_raw"] if is_encoder else ["sample"],
-            opset_version=20,
-            dynamo=not legacy,
-            optimize=False,
-            do_constant_folding=False,
-            dynamic_axes=dynamic_axes,
-        )
+        torch.onnx.export(module, args, str(output), **export_kwargs)
 
 
 @contextlib.contextmanager

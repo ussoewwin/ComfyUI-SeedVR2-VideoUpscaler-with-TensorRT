@@ -1,18 +1,22 @@
 """Cloud GPU ONNX export worker for RTX 5090 (32GB VRAM, Blackwell sm_120).
 
-Traces the full static ONNX (e.g. 85f x 512x512) directly on the GPU in seconds
-to minutes, avoiding the slow CPU trace and the local 16GB VRAM limit.
+Traces a static ONNX graph for the TensorRT VAE engines.
 
 OOM strategy (--device auto, default):
-    1) GPU trace with no Conv3d chunking (original behaviour);
-    2) on CUDA OOM: retry ON GPU with Conv3d chunking 4 GB, then 2 GB
-       (lowers the peak while staying on the fast GPU path);
-    3) only if all GPU attempts fail: CPU float16 trace (system RAM, CUDA
-       hidden). The CPU path is extremely slow for large 512-tile traces
-       (hours) and should be considered a last resort.
+    1) legacy exporter (torch.jit tracer) on GPU, no Conv3d chunking - the
+       reference graph used by all existing engines.  NOTE: the legacy tracer
+       keeps every intermediate activation alive, so 85f x 512 needs ~33GB and
+       does not fit in a 31GB card;
+    2) on CUDA OOM: automatically re-runs itself in a FRESH PROCESS with
+       --export-mode dynamo (torch.export based exporter).  Fake-tensor tracing
+       needs almost no GPU memory, so large 512-tile graphs can be exported on
+       a 5090;
+    3) last resort: CPU float16 trace (system RAM, CUDA hidden).  This is
+       extremely slow for large 512-tile graphs (hours) - avoid if possible.
 
-Use --gpu-conv-limit-gb to fix the GPU path's Conv3d chunk size directly, and
---device cuda / --device cpu to force a specific path.
+Use --export-mode to force a specific exporter, --gpu-conv-limit-gb to set a
+Conv3d chunk size for the GPU path, and --device cuda / --device cpu to force
+a specific device.
 
 The produced ONNX is GPU-independent. Build the engine with cloud_build_engine.py
 on any Blackwell (sm_120) GPU, or locally on the RTX 5060 Ti.
@@ -20,7 +24,7 @@ on any Blackwell (sm_120) GPU, or locally on the RTX 5060 Ti.
 Usage:
     python tools/cloud_export_gpu.py --repo <custom_node_root> \
         --kind encoder --frames 85 --output <onnx_path> [--model ema_vae_fp16.safetensors] \
-        [--device auto|cuda|cpu] [--gpu-conv-limit-gb 0] [--cpu-conv-limit-gb 16]
+        [--tile 512] [--device auto|cuda|cpu] [--export-mode legacy|dynamo]
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ import argparse
 import gc
 import os
 import inspect
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -102,14 +107,16 @@ def main() -> int:
     parser.add_argument("--tile", type=int, default=256, choices=[256, 512],
                         help="spatial tile size for the ONNX (256 = 1/4 memory; engine tile must match)")
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
-                        help="auto = GPU first (with chunked GPU retries), fall back to CPU fp16 (system RAM) "
-                             "on CUDA OOM; cuda = GPU only; cpu = CPU only (CUDA hidden)")
+                        help="auto = GPU first (fresh-process fallbacks), then CPU fp16 (system RAM); "
+                             "cuda = GPU only; cpu = CPU only (CUDA hidden)")
+    parser.add_argument("--export-mode", choices=["legacy", "dynamo"], default="legacy",
+                        help="legacy = torch.jit tracer (reference graph; keeps all activations alive "
+                             "while tracing); dynamo = torch.export based exporter (fake tensors, "
+                             "almost no GPU memory)")
     parser.add_argument("--gpu-conv-limit-gb", type=float, default=0.0,
-                        help="Conv3d chunk size (GB) for the GPU trace (0 = no chunking). "
-                             "OOM retries try 4 GB then 2 GB when this is 0.")
+                        help="Conv3d chunk size (GB) for the GPU trace (0 = no chunking)")
     parser.add_argument("--cpu-conv-limit-gb", type=float, default=16.0,
-                        help="Conv3d chunk size (GB) for the CPU trace path only (default 16, like "
-                             "export_onnx_worker.py). 0 = no chunking.")
+                        help="Conv3d chunk size (GB) for the CPU trace path only (default 16)")
     args = parser.parse_args()
 
     cuda_available = torch.cuda.is_available()
@@ -165,9 +172,6 @@ def main() -> int:
     vae = vae.to(device=load_dev, dtype=torch.float16).eval()
     configure_fixed_vae(vae)
 
-    # Keep the reference graph (no conv/norm chunking) unless a chunk size is requested.
-    # NOTE: chunked graphs differ from the Studio-compatible unchunked reference; engines
-    # built from a chunked ONNX should be validated before production use.
     from src.models.video_vae_v3.modules.global_config import set_norm_limit
     set_norm_limit(float("inf"))
     _dbg = Debug(enabled=False)
@@ -212,14 +216,14 @@ def main() -> int:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    def _trace_gpu(limit_gb: float) -> None:
-        lim = float(limit_gb) if (limit_gb and limit_gb > 0) else float("inf")
+    def _trace_gpu() -> None:
+        lim = float(args.gpu_conv_limit_gb) if (args.gpu_conv_limit_gb and args.gpu_conv_limit_gb > 0) else float("inf")
         _apply_conv_limits(lim)
         txt = "no chunking" if lim == float("inf") else f"Conv3d chunk {lim:g} GB"
-        print(f"Exporting {frames}f {args.kind} ONNX on GPU (legacy tracer; {txt})...", flush=True)
+        print(f"Exporting {frames}f {args.kind} ONNX on GPU ({args.export_mode} exporter; {txt})...", flush=True)
         _free_cuda()
         with torch.inference_mode():
-            _portable_export(mod, (dummy,), output, legacy=True)
+            _portable_export(mod, (dummy,), output, legacy=(args.export_mode == "legacy"))
 
     def _export_cpu() -> None:
         limit_txt = "no chunking" if cpu_conv_limit == float("inf") else f"Conv3d chunk {cpu_conv_limit:g} GB"
@@ -234,28 +238,36 @@ def main() -> int:
         _free_cuda()
 
     if use_gpu:
-        produced = False
+        oom_hit = False
         try:
-            _trace_gpu(args.gpu_conv_limit_gb)
-            produced = True
+            _trace_gpu()
         except RuntimeError as exc:
             if args.device == "cuda" or not _is_oom(exc):
                 raise
-            print(f"[GPU-offload] GPU trace hit OOM ({type(exc).__name__}).", flush=True)
-            if args.gpu_conv_limit_gb and args.gpu_conv_limit_gb > 0:
-                print("[GPU-offload] a Conv3d chunk size was already set; not retrying at other sizes.", flush=True)
-            else:
-                for retry_gb in (4.0, 2.0):
-                    try:
-                        print(f"[GPU-offload] retrying on GPU with Conv3d chunk {retry_gb:g} GB...", flush=True)
-                        _trace_gpu(retry_gb)
-                        produced = True
-                        break
-                    except RuntimeError as exc2:
-                        if not _is_oom(exc2):
-                            raise
-                        print(f"[GPU-offload] retry with {retry_gb:g} GB still OOM.", flush=True)
-        if not produced:
+            oom_hit = True
+        produce_note = ""
+
+        if oom_hit:
+            print("[GPU-offload] GPU trace hit CUDA OOM.", flush=True)
+            if args.export_mode != "dynamo":
+                # Re-run in a fresh process: the failed legacy trace keeps its activation
+                # tensors alive via the exception traceback / tracer state, so retrying in
+                # the same process would immediately fail again.
+                child_cmd = [
+                    sys.executable, str(Path(__file__).resolve()),
+                    "--repo", args.repo, "--kind", args.kind, "--frames", str(args.frames),
+                    "--output", str(output), "--model", args.model, "--tile", str(args.tile),
+                    "--device", args.device, "--export-mode", "dynamo",
+                    "--cpu-conv-limit-gb", str(args.cpu_conv_limit_gb),
+                ]
+                if args.model_dir:
+                    child_cmd += ["--model-dir", args.model_dir]
+                if args.gpu_conv_limit_gb and args.gpu_conv_limit_gb > 0:
+                    child_cmd += ["--gpu-conv-limit-gb", str(args.gpu_conv_limit_gb)]
+                print("[GPU-offload] retrying in a fresh process with the dynamo (torch.export) exporter "
+                      "- fake-tensor tracing needs almost no GPU memory...", flush=True)
+                res = subprocess.run(child_cmd)
+                return res.returncode
             print("[CPU-offload] all GPU attempts failed; switching to CPU fp16 (system RAM).", flush=True)
             try:
                 vae.to("cpu")
