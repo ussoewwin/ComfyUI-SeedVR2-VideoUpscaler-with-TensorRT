@@ -19,8 +19,47 @@ Setup (first time):
 from __future__ import annotations
 
 import argparse
+import math
+import re
+import subprocess
+import sys
 import time
 from pathlib import Path
+
+
+def _diagnose_required_workspace_gb(onnx_path: str) -> float | None:
+    """Run one quick build with a verbose logger and read TRT's 'Need <bytes>' figure.
+
+    TRT reports large-build failures as:
+        (foreignNode) [pass.cpp] Exceeded mem budget of <budget>. Need <bytes>
+        Try increasing the workspace size with IBuilderConfig::setMemoryPoolLimit.
+    This helper extracts <bytes> so the caller can retry with a sufficient size.
+    """
+    code = (
+        "import sys\n"
+        "import tensorrt_rtx as trt\n"
+        "logger = trt.Logger(trt.Logger.VERBOSE)\n"
+        "builder = trt.Builder(logger)\n"
+        "network = builder.create_network()\n"
+        "parser = trt.OnnxParser(network, logger)\n"
+        "if not parser.parse_from_file(sys.argv[1]):\n"
+        "    raise SystemExit('parse failed')\n"
+        "config = builder.create_builder_config()\n"
+        "config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)\n"
+        "builder.build_serialized_network(network, config)\n"
+    )
+    try:
+        res = subprocess.run(
+            [sys.executable, "-c", code, onnx_path],
+            capture_output=True, text=True, timeout=900,
+        )
+        out = (res.stdout or "") + "\n" + (res.stderr or "")
+        m = re.search(r"Need (\d+)", out)
+        if m:
+            return int(m.group(1)) / 2**30
+    except Exception:
+        pass
+    return None
 
 
 def main() -> int:
@@ -93,23 +132,42 @@ def main() -> int:
     else:
         blob = _try_build(args.workspace_gb)
         if blob is None:
-            # Retry with a spread of allocation sizes: some graphs need a LARGER pool before
-            # TRT will accept the build (the requested size always came back as
-            # "configured size + ~0.19 GB", and the build failed even when far more VRAM
-            # was free), while others succeed with a smaller one.
+            # TRT accepts or rejects a build based on the *budget* (the configured pool),
+            # not on how much VRAM happens to be free: "Exceeded mem budget of X. Need Y".
+            # Retry with a spread of sizes first: larger graphs often need more than the
+            # configured value, smaller ones may build with less.
             for ws_try in (24.0, 28.0, 32.0, 12.0, 8.0, 6.0, 4.0, 3.0, 2.0, 1.5, 1.0):
                 if ws_try == args.workspace_gb:
                     continue
                 print(f"WARNING: build failed at {args.workspace_gb:g} GB; retrying with {ws_try:g} GB...", flush=True)
                 blob = _try_build(ws_try)
                 if blob is not None:
-                    print(f"NOTE: engine built with reduced allocation {ws_try:g} GB.", flush=True)
+                    print(f"NOTE: engine built with adjusted allocation {ws_try:g} GB.", flush=True)
                     break
                 print(f"WARNING: build failed at {ws_try:g} GB as well.", flush=True)
+        if blob is None:
+            # Last resort: ask TRT (verbose run) how much it actually needs, then retry
+            # with that size (+margin).
+            need_gb = _diagnose_required_workspace_gb(str(args.onnx))
+            if need_gb is not None:
+                print(f"DIAG: TRT reports this graph needs ~{need_gb:.1f} GiB of workspace to build.", flush=True)
+                for extra in (2.0, 4.0, 6.0):
+                    ws_try = math.ceil(need_gb) + extra
+                    if ws_try >= 40.0:
+                        continue
+                    print(f"WARNING: retrying with the required allocation {ws_try:g} GB...", flush=True)
+                    blob = _try_build(ws_try)
+                    if blob is not None:
+                        print(f"NOTE: engine built at {ws_try:g} GB.", flush=True)
+                        break
+                    print(f"WARNING: build failed at {ws_try:g} GB as well.", flush=True)
+            else:
+                print("DIAG: could not determine the required workspace size from a verbose build.", flush=True)
     dt = time.perf_counter() - t0
 
     if blob is None:
-        print("ERROR: engine build failed (allocation too large for the free VRAM, or graph unsupported)", flush=True)
+        print("ERROR: engine build failed (the build needs more workspace than was granted, "
+              "or the graph is unsupported)", flush=True)
         return 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
