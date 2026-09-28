@@ -1,49 +1,49 @@
-# SeedVR2 Video Upscaler — Technical Guide: Three Core Improvements and Encoder Refactoring
+# SeedVR2 视频放大器 — 技术规格书：三大核心改进与编码器全面重构
 
 <table align="center">
   <tr>
-    <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>EN</b></font></td>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="../zhmd/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md"><font color="#4b5563"><b>中文</b></font></a></td>
+    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="../md/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md"><font color="#4b5563"><b>EN</b></font></a></td>
+    <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>中文</b></font></td>
   </tr>
 </table>
 
-Target custom node: `ComfyUI/custom_nodes/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder`  
-Target core modules: `src/interfaces/video_save.py`, `src/core/trt_decoder.py`, `src/core/trt_encoder.py`, `src/core/infer.py`, `src/core/generation_phases.py`, `src/interfaces/trt_vae_model_loader.py`
+目标自定义节点：`ComfyUI/custom_nodes/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder`  
+目标核心模块：`src/interfaces/video_save.py`、`src/core/trt_decoder.py`、`src/core/trt_encoder.py`、`src/core/infer.py`、`src/core/generation_phases.py`、`src/interfaces/trt_vae_model_loader.py`
 
 ---
 
-## Part 1: Three Core Improvements (Studio Production Engineering Knowledge)
+## 第一部分：三大核心改进（Studio 生产环境工程技术）
 
-### 1. Pre-Fix Problems and Failure Modes
+### 1. 修复前的问题与故障模式
 
-#### 1.1 Timestamp Drift & Playback Endpoint Freezes during Video Assembly
-- **Problem**: When long video renders are split into temporal chunks or batches and assembled back into an MP4 container, standard video encoders produce non-monotonic Presentation Time Stamps (PTS) or Variable Frame Rate (VFR) containers.
-- **Symptom**: In players like PotPlayer, the final video frame freezes on screen while audio continues playing for several seconds, or audio drifts out of sync by hundreds of milliseconds over extended playback.
+#### 1.1 视频合并时的音画不同步与播放末端卡死
+- **问题根源**：长视频进行分块（Chunk/Batch）放大并重新打包为 MP4 容器时，常规编码器往往会产生不连续的呈现时间戳（PTS）或可变帧率（VFR）。
+- **故障现象**：在 PotPlayer 等播放器中，视频播放到最后一帧时画面冻结，但音频继续播放数秒；或者在长视频中音画逐渐产生数百毫秒的累积偏移。
 
-#### 1.2 Black/Corrupted Output Tiles from Mutable `set_tensor_address` ExecutionContext Overwrite
-- **Problem**: In TensorRT's execution model, an `ExecutionContext` holds mutable memory pointers assigned via `set_tensor_address`. Naive multi-tile or asynchronous CUDA stream dispatch triggers race conditions where a later queued tile overwrites the tensor memory address of an actively executing tile.
-- **Symptom**: Earlier tiles read or write to corrupted memory ranges, outputting black tiles, severe gray checkerboard artifacts, or completely blank outputs.
+#### 1.2 可变 `set_tensor_address` 执行上下文覆盖导致的黑块与显存损坏
+- **问题根源**：在 TensorRT 的执行模型中，`ExecutionContext` 持有由 `set_tensor_address` 绑定的可变显存指针。如果使用简单的多流异步并发，后续入队的瓦片（Tile）会覆盖正在 GPU 上执行的前序瓦片的显存地址。
+- **故障现象**：前序瓦片读写了被覆盖的显存区域，导致输出黑块、严重的灰色马赛克噪点或完全空白的瓦片。
 
-#### 1.3 Progressive VRAM Fragmentation and Memory Leak in Multi-Batch Loops
-- **Problem**: Long upscale runs (50–200+ frames) generate large intermediate FP32 spatial accumulation buffers and latent chunks. When loops rely solely on standard Python garbage collection or simple `del`, circular references and PyTorch's caching allocator hold onto CUDA memory pool blocks without returning them to the OS.
-- **Symptom**: Available VRAM progressively degrades with each processed chunk, eventually triggering an Out-Of-Memory (`CUDA out of memory`) crash on long renders.
+#### 1.3 多批次循环中的渐进式显存碎片与显存泄漏
+- **问题根源**：长视频渲染（50~200+ 帧）会产生大量 FP32 空间累加缓冲区与潜在特征块。如果仅依赖常规垃圾回收或简单的 `del`，循环引用与 PyTorch 缓存分配器会持续保留 CUDA 内存池块而不返还给系统。
+- **故障现象**：可用显存随处理分块逐级减少，最终导致长时间渲染因显存溢出（`CUDA out of memory`）而崩溃。
 
 ---
 
-### 2. Newly Created and Modified Files
+### 2. 新增与修改的文件列表
 
-| File Path | Status | Role in Theme 1 |
+| 文件路径 | 状态 | 在三大核心改进中的作用 |
 | :--- | :--- | :--- |
-| `src/interfaces/video_save.py` | Newly Created | Implements dedicated CFR video assembler node applying Studio's production FFmpeg flags (`-fflags +genpts -avoid_negative_ts make_zero -fps_mode cfr`). |
-| `src/core/trt_decoder.py` | Modified | Adds `_DECODE_LOCK` mutual exclusion, synchronous 1-tile execution (`stream.synchronize()`), and per-chunk tri-partite memory cleanup. |
-| `src/core/trt_encoder.py` | Modified | Adds `_ENCODE_LOCK` mutual exclusion, synchronous 1-tile execution (`stream.synchronize()`), and per-chunk tri-partite memory cleanup. |
-| `src/core/generation_phases.py` | Modified | Applies deterministic tri-partite memory reclamation (`del` + `gc.collect()` + `torch.cuda.empty_cache()`) across Phase 1, Phase 2, and Phase 3. |
+| `src/interfaces/video_save.py` | 新增 | 实现应用 Studio 生产级 FFmpeg 参数（`-fflags +genpts -avoid_negative_ts make_zero -fps_mode cfr`）的专用 CFR 视频合并节点。 |
+| `src/core/trt_decoder.py` | 修改 | 添加 `_DECODE_LOCK` 互斥锁、单瓦片同步执行（`stream.synchronize()`）及每块三阶段显存深度清理。 |
+| `src/core/trt_encoder.py` | 修改 | 添加 `_ENCODE_LOCK` 互斥锁、单瓦片同步执行（`stream.synchronize()`）及每块三阶段显存深度清理。 |
+| `src/core/generation_phases.py` | 修改 | 在阶段一（编码）、阶段二（放大）、阶段三（解码）中全面引入三阶段显存回收（`del` + `gc.collect()` + `torch.cuda.empty_cache()`）。 |
 
 ---
 
-### 3. Complete Source Code of Newly Created & Modified Components (Unabridged)
+### 3. 新增与修改代码的完整源码（禁止中略）
 
-#### 3.1 Newly Created File: `src/interfaces/video_save.py` (Complete Node Implementation)
+#### 3.1 新增文件：`src/interfaces/video_save.py`（完整节点实现源码）
 
 ```python
 """
@@ -249,7 +249,7 @@ class SeedVR2SaveVideo(io.ComfyNode):
         return io.NodeOutput(str(final_path))
 ```
 
-#### 3.2 Modified Code in `src/core/trt_decoder.py`: Address Protection & Tri-Partite Memory Reclaim
+#### 3.2 `src/core/trt_decoder.py` 修改代码：地址覆盖防护与三阶段显存回收
 
 ```python
     with _DECODE_LOCK, torch.cuda.stream(stream):
@@ -299,7 +299,7 @@ class SeedVR2SaveVideo(io.ComfyNode):
     _gc.collect()
 ```
 
-And in `_decode_chunked` (Per-chunk tri-partite cleanup):
+分块解码循环中的三阶段深度回收代码：
 
 ```python
     for start in starts:
@@ -315,7 +315,7 @@ And in `_decode_chunked` (Per-chunk tri-partite cleanup):
     return result
 ```
 
-#### 3.3 Modified Code in `src/core/trt_encoder.py`: Address Protection & Tri-Partite Memory Reclaim
+#### 3.3 `src/core/trt_encoder.py` 修改代码：地址覆盖防护与三阶段显存回收
 
 ```python
     with _ENCODE_LOCK, torch.cuda.stream(stream):
@@ -377,9 +377,9 @@ And in `_decode_chunked` (Per-chunk tri-partite cleanup):
     return encoded
 ```
 
-#### 3.4 Modified Code in `src/core/generation_phases.py`: Tri-Partite Memory Reclaim across Phases 1-3
+#### 3.4 `src/core/generation_phases.py` 修改代码：全阶段三阶段显存深度回收
 
-Phase 1 (Encoding Loop):
+阶段一（编码循环）：
 ```python
             del cond_latents
             import gc as _gc
@@ -388,7 +388,7 @@ Phase 1 (Encoding Loop):
                 torch.cuda.empty_cache()
 ```
 
-Phase 2 (Upscaling Loop):
+阶段二（放大循环）：
 ```python
             # Free original latent - release tensor memory first
             release_tensor_memory(ctx['all_latents'][batch_idx])
@@ -401,7 +401,7 @@ Phase 2 (Upscaling Loop):
                 torch.cuda.empty_cache()
 ```
 
-Phase 3 (Decoding Loop):
+阶段三（解码循环）：
 ```python
             # Free memory immediately - no batch_samples storage
             release_tensor_memory(ctx['all_upscaled_latents'][batch_idx])
@@ -415,52 +415,52 @@ Phase 3 (Decoding Loop):
 
 ---
 
-### 4. Technical Significance and Architectural Rationale
+### 4. 技术意义与架构设计意图
 
-1. **Deterministic PTS & CFR Locking**:  
-   FFmpeg's `-fflags +genpts -avoid_negative_ts make_zero -fps_mode cfr` forces packet payload PTS recalculation, shifts initial timestamps strictly to `00:00:00.000`, and enforces true Constant Frame Rate. Video and audio clocks remain mathematically locked across hours of upscale playback.
+1. **确定性 PTS 与 CFR 锁定**：  
+   FFmpeg 的 `-fflags +genpts -avoid_negative_ts make_zero -fps_mode cfr` 从数据包层面重新计算 PTS，强制视频首帧时间戳从严格的 `00:00:00.000` 开始，并彻底锁定恒定帧率（CFR）。播放器在任何拖动与长时间播放下，音画始终保持纳秒级绝对对齐。
 
-2. **ExecutionContext Immutability Protection**:  
-   By acquiring mutual exclusion locks (`_DECODE_LOCK` / `_ENCODE_LOCK`) and synchronizing after each tile (`stream.synchronize()`), tensor addresses remain bound and immutable throughout active kernel execution, physically preventing buffer address corruption and black/gray tiles.
+2. **执行上下文（ExecutionContext）地址不变性保护**：  
+   通过获取互斥锁（`_DECODE_LOCK` / `_ENCODE_LOCK`）并在每个瓦片推理后执行 `stream.synchronize()`，确保显存指针在 GPU 内核执行期间处于绝对只读状态，从底层根绝了显存指针覆盖竞争导致的黑块与显存污染。
 
-3. **Deterministic Tri-Partite Reclamation**:  
-   Pairing `del` with `gc.collect()` and `torch.cuda.empty_cache()` at the boundary of every chunk and generation phase completely wipes transient GPU blocks, delivering a completely flat VRAM consumption curve across 100+ frames.
-
----
-
-## Part 2: Comprehensive Encoder Refactoring (v1.5.4 Foundation & Production Modernization)
-
-### 1. Pre-Fix Problems and Failure Modes
-
-#### 1.1 Inheritance of Pre-v1.5.4 Encoder Flaws (Scratchpad Reset & VRAM Bloat)
-- **Problem**: Prior to porting v1.5.4 architecture, the encoder invoked `set_input_shape` unconditionally on every tile. In TensorRT, changing or re-setting input shapes causes the internal engine allocator to reallocate scratchpads, ingesting uninitialized GPU memory and producing noise on tile `(0, 0)`. Furthermore, padding the outer canvas resulted in massive Float32 intermediate accumulation buffers.
-
-#### 1.2 Short-Batch `IndexError` Crashes on Sub-Engine Clips
-- **Problem**: Processing clips shorter than available engine sizes (e.g. `batch_size=5` with a 21f engine) produced empty slice ranges (`range(0, total - engine_frames + 1, stride)`). Accessing `starts[-1]` crashed with `IndexError: list index out of range`.
-
-#### 1.3 Silent FP16 Fallback Masking Pipeline Errors
-- **Problem**: Legacy implementations caught runtime exceptions in a broad `try...except` block, quietly reverting to standard PyTorch FP16 VAE encoding without alerting the user. Users assumed TensorRT 3x–5x acceleration was running when execution was actually degraded.
-
-#### 1.4 Hardcoded Engine Selection and Asymmetric/Confusing Node Layout
-- **Problem**: The encoder could not discover dynamic engines on disk, hardcoding static sizes. Its loader node was named `SeedVR2LoadTensorRTVAEModel` with redundant widgets (`encode_tiled`, `encode_tile_size`, `offload_device`), breaking UI symmetry with `SeedVR2LoadTensorRTVAEDecoder`.
+3. **确定性三阶段显存深度回收**：  
+   在每个分块及流程阶段结束处，强制依序执行 `del`、`gc.collect()` 与 `torch.cuda.empty_cache()`，将显存碎块即时归还系统，使 100~200 帧的长视频放大过程始终维持完全平坦的显存占用曲线。
 
 ---
 
-### 2. Modified Files
+## 第二部分：编码器全面重构（v1.5.4 基盘移植与现代化）
 
-| File Path | Status | Role in Theme 2 |
+### 1. 修复前的问题与故障模式
+
+#### 1.1 v1.5.4 修复前遗留缺陷（中间缓冲区重置与显存爆炸）
+- **问题根源**：在移植 v1.5.4 架构前，编码器无条件对每个瓦片调用 `set_input_shape`。在 TensorRT 中，重设静态形状会触发内部重新分配显存池，读取未初始化的 GPU 垃圾数据，造成 `(0, 0)` 瓦片严重噪点。此外，旧版全局画布填充导致中间 FP32 累加缓冲区膨胀 2~3 倍。
+
+#### 1.2 小于引擎尺寸批次的 `IndexError` 崩溃
+- **问题根源**：处理小于引擎容量的批次（例如默认 `batch_size=5` 遇到 21 帧引擎）时，切片范围 `range(0, total - engine_frames + 1, stride)` 产生空列表 `[]`。索引 `starts[-1]` 直接触发 `IndexError: list index out of range`。
+
+#### 1.3 隐性降级回 FP16 掩盖错误与虚假运行
+- **问题根源**：旧版实现使用宽泛的 `try...except` 吞掉异常，静默回退至标准 PyTorch FP16 VAE 进行低速编码，且不给用户任何提示，导致用户误以为享受了 3~5 倍加速，实际处于降级状态。
+
+#### 1.4 硬编码引擎支持与不对称的界面布局
+- **问题根源**：编码器无法扫描磁盘上的任意引擎，仅硬编码固定尺寸；其加载节点名为 `SeedVR2LoadTensorRTVAEModel` 并包含冗余参数，与解码器严重不对称。
+
+---
+
+### 2. 修改的文件列表
+
+| 文件路径 | 状态 | 在编码器重构中的作用 |
 | :--- | :--- | :--- |
-| `src/core/trt_encoder.py` | Modified | Ported v1.5.4 shape guard, dummy warmup, local padding; implemented short-batch pad & crop, and dynamic multi-directory engine scanner. |
-| `src/core/infer.py` | Modified | Updated `_trt_encode_batch` with spatial pad-to-8, short-batch pad & crop, and fail-fast `RuntimeError` dispatch. |
-| `src/interfaces/trt_vae_model_loader.py` | Modified | Renamed node to `SeedVR2LoadTensorRTVAEEncoder`, symmetrical UI schema with decoder, multi-directory engine scanner, and backward compatibility alias. |
+| `src/core/trt_encoder.py` | 修改 | 移植 v1.5.4 形状守卫、虚拟预热、局部填充；实现短批次 Pad & Crop 1-Shot 执行与多目录动态引擎扫描。 |
+| `src/core/infer.py` | 修改 | 更新 `_trt_encode_batch` 支持空间补 8、短批次 Pad & Crop 及严格的 fail-fast `RuntimeError` 分发。 |
+| `src/interfaces/trt_vae_model_loader.py` | 修改 | 重命名节点为 `SeedVR2LoadTensorRTVAEEncoder`，统一与解码器对称的 UI Schema，保留向前兼容别名。 |
 
 ---
 
-### 3. Complete Source Code of Modified Components (Unabridged)
+### 3. 修改代码的完整源码（禁止中略）
 
-#### 3.1 Modified Code in `src/core/trt_encoder.py`: v1.5.4 Foundations, Pad & Crop, and Dynamic Discovery
+#### 3.1 `src/core/trt_encoder.py` 修改代码：v1.5.4 基盘移植、Pad & Crop 与动态扫描
 
-Shape Check Guard, Local Padding, and Dummy Warmup in `_encode_single_chunk`:
+`_encode_single_chunk` 中的形状守卫、局部填充与虚拟预热：
 
 ```python
     # Studio-compatible shape check: only call set_input_shape if the current shape
@@ -500,7 +500,7 @@ Shape Check Guard, Local Padding, and Dummy Warmup in `_encode_single_chunk`:
         del warmup_in, warmup_out
 ```
 
-Short-Batch Pad & Crop in `encode`:
+`encode` 中的短批次 Pad & Crop 1-Shot 执行：
 
 ```python
     engine_video_frames = pick_engine_frames(total_frames, engine_frames)
@@ -523,7 +523,7 @@ Short-Batch Pad & Crop in `encode`:
     return _encode_chunked(sample, total_frames, engine_video_frames, vae=vae, dit_model=dit_model)
 ```
 
-Dynamic Multi-Directory Engine Discovery Functions:
+多目录动态引擎扫描函数：
 
 ```python
 _ENGINE_FILE_RE = re.compile(r"^vae_encoder_(\d+)f_tile\d+\.rtxplan$")
@@ -577,7 +577,7 @@ def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None
     return engines[0]
 ```
 
-#### 3.2 Modified Code in `src/core/infer.py`: `_trt_encode_batch` & Fail-Fast RuntimeError Dispatch
+#### 3.2 `src/core/infer.py` 修改代码：`_trt_encode_batch` 与 Fail-Fast 严格错误分发
 
 ```python
 def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
@@ -639,7 +639,7 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
     return latent
 ```
 
-And in the main inference dispatch loop (Elimination of silent FP16 fallback):
+推理主循环中的 Fail-Fast 严格分发（杜绝静默回退）：
 
 ```python
             # VAE process by each group.
@@ -672,7 +672,7 @@ And in the main inference dispatch loop (Elimination of silent FP16 fallback):
                     continue
 ```
 
-#### 3.3 Modified Code in `src/interfaces/trt_vae_model_loader.py`: Symmetrical Node Renaming
+#### 3.3 `src/interfaces/trt_vae_model_loader.py` 修改代码：完全对称的节点定义与向前兼容
 
 ```python
 class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
@@ -745,16 +745,16 @@ SeedVR2LoadTensorRTVAEModel = SeedVR2LoadTensorRTVAEEncoder
 
 ---
 
-### 4. Technical Significance and Architectural Rationale
+### 4. 技术意义与架构设计意图
 
-1. **Porting v1.5.4 Architectural Foundations**:  
-   Skipping redundant `set_input_shape` calls protects static TRT engines from re-allocating memory scratchpads. The dummy warmup pass primes internal 3D causal accumulator buffers, while local padding prevents allocating gigantic 2x–3x Float32 accumulation buffers.
+1. **v1.5.4 基盘移植的决定性价值**：  
+   避免静态引擎不必要的 `set_input_shape`，彻底消除 TRT 显存池重配引入的垃圾数据；前置虚拟预热填充内部因果卷积状态行，根治左上角瓦片色块；局部瓦片填充消除额外画布显存占用，使编码显存恒定低于 400MB。
 
-2. **Short-Batch Pad & Crop 1-Shot Speed**:  
-   Rather than crashing on `starts[-1]` with `IndexError`, short clips are padded by replicating the last frame, executed at 1-shot TRT speed, and cropped back to the true latent length.
+2. **短批次 Pad & Crop 1-Shot 加速**：  
+   通过末尾帧复制将短批次对齐至引擎容量并执行 1-Shot 推理，随后裁剪回目标潜在特征长度，彻底根除切片越界 `IndexError`，同时使短视频获得最高 TensorRT 极速加速。
 
-3. **Fail-Fast Integrity**:  
-   Replacing silent FP16 fallbacks with explicit `RuntimeError` dispatch guarantees users know immediately if TensorRT dependencies or engines are missing, eliminating deceptive performance drops.
+3. **Fail-Fast 确定性 vs. 隐性降级**：  
+   坚决剔除静默回退至 FP16 的敷衍逻辑，引擎缺失或配置异常立即明确报错停止，杜绝性能隐性劣化。
 
-4. **Symmetrical Node Design**:  
-   Providing `SeedVR2LoadTensorRTVAEEncoder` with an identical UI schema to `SeedVR2LoadTensorRTVAEDecoder` simplifies workflow design while maintaining complete backward compatibility via the `SeedVR2LoadTensorRTVAEModel` alias.
+4. **节点对称性与动态引擎探索**：  
+   赋予编码器与解码器完全镜像统一的加载接口与跨目录动态扫描能力，提升用户体验与工作流整洁度，同时维持向后兼容性。
