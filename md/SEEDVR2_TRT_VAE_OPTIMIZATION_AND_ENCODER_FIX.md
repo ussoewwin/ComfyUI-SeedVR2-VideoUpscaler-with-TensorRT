@@ -39,11 +39,16 @@ Target core modules: `src/interfaces/video_save.py`, `src/core/trt_decoder.py`, 
 
 ### Theme 2: Comprehensive Encoder Refactoring
 
-1. **Short-Batch Pad & Crop 1-Shot Execution & Complete Elimination of Silent FP16 Fallbacks**  
+1. **Porting v1.5.4 Architectural Foundations to Encoder (Elimination of Artifacts & VRAM Bloat)**  
+   Fully ported the v1.5.4 decoder fixes into `trt_encoder.py`:
+   - *Studio-Compatible Static Shape Check Guard*: `current_shape != target_shape` bypasses redundant `set_input_shape` calls, preventing TRT internal scratchpad reallocation and dirty VRAM ingestion.
+   - *Deterministic Dummy Warmup Execution*: An asynchronous zero-filled dummy pass (`warmup_in` / `warmup_out`) and CUDA stream synchronization prior to tiling cleans internal 3D causal convolution accumulator lines, eliminating uninitialized garbage reads on tile `y=0, x=0`.
+   - *Zero VRAM Bloat Architecture*: Local tile padding instead of outer canvas padding, avoiding 2x-3x memory explosion of float32 accumulation buffers (`result`, `weights`, `dc_result`).
+2. **Short-Batch Pad & Crop 1-Shot Execution & Complete Elimination of Silent FP16 Fallbacks**  
    Eliminating the legacy `IndexError` on slice indexing (`starts[-1]`) when processing video batches smaller than engine frame counts (e.g. `batch_size=5` with a 21f engine). Replicating the final frame up to engine capacity, executing 1-shot TRT encode, and cropping back to the true latent length `(total - 1) // 4 + 1` preserves maximum hardware acceleration. Missing runtime dependencies or missing engine files raise an explicit `RuntimeError` rather than silently degrading performance into PyTorch FP16.
-2. **Dynamic Multi-Directory Engine Discovery Architecture (`pick_engine_frames` / `_available_engine_frames`)**  
+3. **Dynamic Multi-Directory Engine Discovery Architecture (`pick_engine_frames` / `_available_engine_frames`)**  
    Dynamically scans `tensorrt_backend/artifacts` and `models/tensorrt/seedvr2` for arbitrary 4n+1 frame engine plans. Dynamically selects engines prioritizing exact match → largest fitting engine → smallest engine with padding and cropping.
-3. **Node Renaming & Symmetrical UI Schema (`SeedVR2LoadTensorRTVAEEncoder`)**  
+4. **Node Renaming & Symmetrical UI Schema (`SeedVR2LoadTensorRTVAEEncoder`)**  
    Renamed `SeedVR2LoadTensorRTVAEModel` to `SeedVR2LoadTensorRTVAEEncoder` (maintaining backward compatibility alias), matching `SeedVR2LoadTensorRTVAEDecoder` symmetrically across node identifier, display name, description, input combo widgets (`model`, `device`, `engine_frames`), tooltips, and `SEEDVR2_VAE` outputs.
 
 ---
