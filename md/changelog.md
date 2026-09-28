@@ -1,7 +1,7 @@
 <table align="center">
   <tr>
     <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>EN</b></font></td>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/blob/main/zhmd/changelogzh.md"><font color="#4b5563"><b>中文</b></font></a></td>
+    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/blob/main/zhmd/changelogzh.md"><font color="#4b5563"><b>中文</b></font></a></td>
   </tr>
 </table>
 
@@ -15,7 +15,7 @@ Fork release history.
   - **ExecutionContext Address Safety:** Enforced lock and stream synchronization to prevent memory overwrite and black tile corruption.
   - **Deterministic Memory Cleanup:** Applied tri-partite reclamation (`del`, `gc`, `empty_cache`) across loops to prevent VRAM fragmentation.
   - **TensorRT VAE Encoder Refactoring:** Ported v1.5.4 artifact/VRAM fixes, added short-batch pad & crop 1-shot execution, removed silent FP16 fallbacks, and symmetrically added `SeedVR2LoadTensorRTVAEEncoder`.
-- **Technical Details:** See [v1.5.5 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) for complete explanation
+- **Technical Details:** See [v1.5.5 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.5) for complete explanation
 
 
 
@@ -24,12 +24,12 @@ Fork release history.
   - **Studio-Compatible Static Shape Check:** Only invoke `context.set_input_shape` when the current shape actually differs from the target tile shape. Static-shape engines now bypass redundant reconfigurations, preventing TRT's internal scratchpad buffer reallocations that previously ingested dirty VRAM.
   - **Deterministic Dummy Warmup Execution:** Executed a single zero-filled dummy inference pass before the spatial tiling loop. This forces TensorRT to sanitize all internal convolution workspaces and temporal accumulator lines, eliminating dirty memory reads on the first tile (`y=0, x=0`).
   - **Zero VRAM Bloat Architecture:** Avoided spatial outer padding that would otherwise inflate float32 accumulation buffers (`result` and `weights`) by 2x–3x VRAM, preserving native resolution decoding speed and minimal VRAM consumption.
-- **Technical Details:** See [v1.5.4 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.4) for complete explanation
+- **Technical Details:** See [v1.5.4 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.4) for complete explanation
 
 ## v1.5.3 — 2026-09-09
 - **Summary:** TensorRT VAE Encoder activation attempt unsuccessful; FP16 VAE encoding kept unchanged:
   - **TensorRT VAE Encoder:** `SeedVR2LoadTensorRTVAEModel` was registered during an activation attempt and has been removed again — the TensorRT encoder's top-left tiling artifact could not be resolved at either 256px or 512px tile size. `SeedVR2LoadTensorRTVAEDecoder` (decode-only TRT) and `SeedVR2BuildTensorRTVAE` remain available. A batched one-shot variant of the FP16 encode path was also evaluated and reverted (it reproduced the blur on FP16); the per-frame loop remains the FP16 encode implementation.
-- **Technical Details:** See [v1.5.3 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.3) for complete explanation
+- **Technical Details:** See [v1.5.3 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.3) for complete explanation
 
 ## v1.5.2 — 2026-09-08
 
@@ -37,17 +37,17 @@ Fork release history.
   - **Engine Selection Overhaul:** `pick_engine_frames` now scans the artifact directories for engines that actually exist (e.g. 25f / 29f / 41f / 61f) instead of the hardcoded `(video_frames, 29, 21, 5)` list, so downloaded engines are actually used instead of silently falling back to the PyTorch VAE.
   - **No Silent Fallback:** `resolve_engine_frames` now returns the largest engine on disk; clips shorter than the smallest engine are padded, decoded in one shot, and cropped back instead of falling back.
   - **Per-Batch Engine Selection:** `_trt_decode_batch` selects the engine from the actual batch length (with pad + crop for short batches).
-- **Technical Details:** See [v1.5.2 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.2) for complete explanation
+- **Technical Details:** See [v1.5.2 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.2) for complete explanation
 
 ## v1.5.1 — 2026-09-05
 
 - **Summary:** Comprehensive installer and runtime reliability overhaul:
   - **Zero-Intervention Automated Installation:** Resolved dependency installation failures in `install.py` by automatically installing `requirements.txt` into the host Python environment without requiring external batch files.
-  - **Attention Backend Unification & PyTorch SDPA Standard:** Removed brittle wheel auto-downloaders for FlashAttention 2 and SageAttention 2, standardizing on PyTorch native SDPA fallback (`attention_mode: sdpa`) when custom attention packages are absent ([#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/issues/1)).
+  - **Attention Backend Unification & PyTorch SDPA Standard:** Removed brittle wheel auto-downloaders for FlashAttention 2 and SageAttention 2, standardizing on PyTorch native SDPA fallback (`attention_mode: sdpa`) when custom attention packages are absent ([#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/1)).
   - **Comprehensive FFmpeg PATH Discovery:** Implemented proactive multi-candidate directory search and `imageio_ffmpeg` fallback across runtime module loading (`__init__.py`), `install.py`, `scripts/verify_install.py`, and CLI to eliminate video export crashes.
   - **Decoder Engine Tile Size Specification:** Documented mandatory `tile_size: 256` constraint for TensorRT VAE Decoder engine compilation to prevent spatial dimension mismatch errors during inference.
   - **Full 64-bit Seed Range:** Expanded seed input range to full 64-bit (`0..0xffffffffffffffff`) matching ComfyUI core nodes (KSampler) and removed obsolete NumPy random seed dependency ([PR #635](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler/pull/635)).
-- **Technical Details:** See [v1.5.1 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.1) for complete explanation
+- **Technical Details:** See [v1.5.1 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.1) for complete explanation
 
 ## v1.5 — 2026-09-03
 

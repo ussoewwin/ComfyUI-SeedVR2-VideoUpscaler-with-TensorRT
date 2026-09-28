@@ -1486,7 +1486,7 @@
         }
       ],
       "properties": {
-        "aux_id": "ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder",
+        "aux_id": "ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT",
         "ver": "d8d83f039c8b6ff53bafa791d974e717250253ce",
         "Node name for S&R": "SeedVR2LoadTensorRTVAEEncoder",
         "ue_properties": {

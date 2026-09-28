@@ -1,6 +1,6 @@
 <table align="center">
   <tr>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/blob/main/md/changelog.md"><font color="#4b5563"><b>EN</b></font></a></td>
+    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/blob/main/md/changelog.md"><font color="#4b5563"><b>EN</b></font></a></td>
     <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>中文</b></font></td>
   </tr>
 </table>
@@ -23,7 +23,7 @@ Fork 发行历史。
   - **对齐 Studio 的静态形状判定：** 仅在当前形状与目标分块形状不符时才调用 `context.set_input_shape`。静态形状引擎完全跳过冗余重构，防止 TRT 内部暂存区缓冲区重新分配并抓取前序脏显存。
   - **确定性 Dummy 热身空跑：** 在进入空间分块循环前，使用全零张量执行一次单次 Dummy 推理。强制 TensorRT 清洗所有内部卷积工作区和时序累加器状态，彻底杜绝首个分块（`y=0, x=0`）读取未初始化内存。
   - **零显存膨胀架构：** 坚决摒弃会导致 float32 累加缓冲区（`result` 与 `weights`）显存激增 2~3 倍的外周 Padding 方案，保持原生分辨率最高解码速度与最小显存开销。
-- **技术详情：** 请参阅 [v1.5.4 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/blob/main/zhmd/v1.5.4.md) 获取完整说明
+- **技术详情：** 请参阅 [v1.5.4 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/blob/main/zhmd/v1.5.4.md) 获取完整说明
 
 ## v1.5.3 — 2026-09-09
 - **摘要：** TensorRT VAE 编码器启用未成功；FP16 VAE 编码保持不变：
@@ -42,7 +42,7 @@ Fork 发行历史。
 
 - **摘要：** 安装程序与运行时稳定性全面改进：
   - **全自动零干预安装：** 修复 `install.py` 无法自动装全依赖的问题，无需手动运行批处理文件即可在目标 Python 环境中自动完成 `requirements.txt` 完整安装。
-  - **统一注意力机制与 SDPA 标准：** 彻底废除 `install.py` 与 `scripts/install.ps1` 中脆弱的 FlashAttention 2 / SageAttention 2 外部 wheel 强制下载与安装逻辑；未安装自定义注意力加速库时，统一安全回退至 PyTorch 原生 SDPA（`attention_mode: sdpa`）（[#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/issues/1)）。
+  - **统一注意力机制与 SDPA 标准：** 彻底废除 `install.py` 与 `scripts/install.ps1` 中脆弱的 FlashAttention 2 / SageAttention 2 外部 wheel 强制下载与安装逻辑；未安装自定义注意力加速库时，统一安全回退至 PyTorch 原生 SDPA（`attention_mode: sdpa`）（[#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/1)）。
   - **全链路 FFmpeg 路径自动解析：** 在节点初始化（`__init__.py`）、安装器（`install.py`）、环境验证（`scripts/verify_install.py`）及 CLI 中全面引入多候选路径扫描与 `imageio_ffmpeg` 自动兜底机制，彻底杜绝视频合成与导出时的 PATH 缺失异常。
   - **解码器引擎规范明示：** 在文档中明确规定构建 TensorRT VAE 解码器引擎（`kind: decoder`）时必须使用 `tile_size: 256`，彻底杜绝推理时的空间维度不匹配问题。
   - **全面支持 64-bit 随机种子：** 将 seed 控件范围拓展至完整 64 位（`0..0xffffffffffffffff`），对齐 ComfyUI 核心节点（KSampler），并彻底移除冗余的 NumPy 随机种子依赖（[PR #635](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler/pull/635)）。

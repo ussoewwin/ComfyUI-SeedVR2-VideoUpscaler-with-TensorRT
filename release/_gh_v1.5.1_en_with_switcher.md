@@ -1,7 +1,7 @@
 <table align="center">
   <tr>
     <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>EN</b></font></td>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/blob/main/zhmd/v1.5.1.md"><font color="#4b5563"><b>中文</b></font></a></td>
+    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/blob/main/zhmd/v1.5.1.md"><font color="#4b5563"><b>中文</b></font></a></td>
   </tr>
 </table>
 
@@ -11,7 +11,7 @@
 
 This maintenance and stabilization release addresses critical installation issues, eliminates fragile external attention wheel dependencies, implements universal FFmpeg discovery across ComfyUI environments, and clarifies spatial tile size constraints for TensorRT VAE Decoder engine compilation.
 
-Addresses and resolves: [#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/issues/1).
+Addresses and resolves: [#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/1).
 
 ---
 
@@ -46,7 +46,7 @@ def install_requirements():
 This guarantees that all required packages are present upon first run in both virtual environments and standalone embedded Python distributions.
 
 ### 2.2 Attention Backend Architecture Unification & SDPA Standard
-Hardcoding wheel URLs for FlashAttention 2 and SageAttention 2 caused continuous installation failures across differing Python versions (Python 3.11, 3.12, 3.13) and platform ABI differences (Issue [#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/issues/1)).
+Hardcoding wheel URLs for FlashAttention 2 and SageAttention 2 caused continuous installation failures across differing Python versions (Python 3.11, 3.12, 3.13) and platform ABI differences (Issue [#1](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/1)).
 
 - **Elimination of Wheel Auto-Downloaders:**
   - Removed `FLASH_ATTN_WHEELS`, `SAGE_ATTN_WHEELS`, and `install_wheels()` from `install.py`.

@@ -1,4 +1,4 @@
-# ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder
+# ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT
 
 <table align="center">
   <tr>
@@ -21,17 +21,17 @@ This repository is a fork of the official repository ([https://github.com/numz/C
 
 - Workflow JSON: [`example_workflows/SeedVR2_tensorrt_decode.json`](example_workflows/SeedVR2_tensorrt_decode.json)
 
-![Usage Example - Full Workflow](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/main/docs/usage_01.png)
+![Usage Example - Full Workflow](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_01.png)
 
 ### TensorRT VAE Decoder Node
 
-![Usage Example - TensorRT VAE Decoder](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/main/docs/usage_02.png)
+![Usage Example - TensorRT VAE Decoder](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
 
 ### TensorRT VAE Engine Builder Node
 
 - Workflow JSON: [`example_workflows/Tensor Build.json`](example_workflows/Tensor%20Build.json)
 
-![TensorRT VAE Engine Builder Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/main/docs/build.png)
+![TensorRT VAE Engine Builder Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/build.png)
 
 The **`SeedVR2 Build TensorRT VAE Engines`** node builds dedicated TensorRT RTX VAE engines (`.rtxplan`) on demand directly within ComfyUI by running GPU tracing (`tools/cloud_export_gpu.py`) and TensorRT compilation (`tools/cloud_build_engine.py`).
 
