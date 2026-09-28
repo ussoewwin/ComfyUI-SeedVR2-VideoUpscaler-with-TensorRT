@@ -15,7 +15,7 @@ Fork 发行历史。
   - **ExecutionContext 地址安全：** 引入互斥锁与流同步，杜绝显存覆盖与黑块损坏。
   - **确定性显存深度清理：** 全流程应用三阶段内存回收，消除显存碎片堆积。
   - **TensorRT VAE 编码器重构：** 移植 v1.5.4 伪影与显存修复基盘、短批次 Pad & Crop 极速单次执行、彻底移除静默降级，并引入对称的 `SeedVR2LoadTensorRTVAEEncoder` 节点。
-- **技术详情：** 请参阅 [v1.5.5 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.5) 获取完整说明
+- **技术详情：** 请参阅 [v1.5.5 发行说明](v1.5.5.md) 获取完整说明
 
 
 ## v1.5.4 — 2026-09-27
@@ -28,7 +28,7 @@ Fork 发行历史。
 ## v1.5.3 — 2026-09-09
 - **摘要：** TensorRT VAE 编码器启用未成功；FP16 VAE 编码保持不变：
   - **TensorRT VAE 编码器：** `SeedVR2LoadTensorRTVAEModel` 在启用尝试期间注册，因左上角分块伪影在 256px 或 512px 分块尺寸下均无法解决而被再次移除。`SeedVR2LoadTensorRTVAEDecoder`（仅解码 TRT）与 `SeedVR2BuildTensorRTVAE` 仍可用。此外还评估了 FP16 编码路径的批量一次性变体并已回退（其在 FP16 上同样复现了模糊），逐帧循环仍是 FP16 编码实现。
-- **技术详情：** 参见 [v1.5.3 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.3) 获取完整说明
+- **技术详情：** 参见 [v1.5.3 发行说明](v1.5.3.md) 获取完整说明
 
 ## v1.5.2 — 2026-09-08
 
@@ -36,7 +36,7 @@ Fork 发行历史。
   - **引擎选择重构：** `pick_engine_frames` 现在扫描实际存在的引擎文件（如 25f / 29f / 41f / 61f），取代硬编码的 `(video_frames, 29, 21, 5)` 列表，使已下载的引擎真正被使用，不再静默回退到 PyTorch VAE。
   - **不再静默回退：** `resolve_engine_frames` 返回磁盘上最大的引擎；短于最小引擎的片段会先填充、单次解码后再裁剪，而不是回退。
   - **按批次选择引擎：** `_trt_decode_batch` 根据实际批次长度选择引擎（短批次自动填充 + 裁剪）。
-- **技术详情：** 参见 [v1.5.2 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/releases/tag/v1.5.2) 获取完整说明
+- **技术详情：** 参见 [v1.5.2 发行说明](v1.5.2.md) 获取完整说明
 
 ## v1.5.1 — 2026-09-05
 
