@@ -69,7 +69,7 @@ Located in `src/interfaces/trt_vae_model_loader.py`:
 | `src/interfaces/video_upscaler.py` | Dual-socket `vae_encode` / `vae_decode` routing and execution control |
 | `src/core/infer.py` | Stride alignment, chunk dispatching, and spatial padding for TRT VAE batches |
 | `__init__.py` | Node registration for `SeedVR2LoadTensorRTVAEDecoder` and startup engine readiness checks |
-| `example_workflows/SeedVR2_tensorrt_decode.json` | Complete example workflow with TensorRT VAE Decoder and 2nd upscale pipeline |
+| `example_workflows/SeedVR2_tensorrt.json` | Complete example workflow with TensorRT VAE Decoder and 2nd upscale pipeline |
 
 ---
 
