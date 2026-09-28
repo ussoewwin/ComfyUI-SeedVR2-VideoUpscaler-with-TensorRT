@@ -23,9 +23,9 @@
 
 ![Usage Example - Full Workflow](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_01.png)
 
-### TensorRT VAE 解码器节点
+### TensorRT VAE 编码器与解码器节点
 
-![Usage Example - TensorRT VAE Decoder](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
+![Usage Example - TensorRT VAE Encoder & Decoder Nodes](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
 
 ### TensorRT VAE 引擎构建节点
 
