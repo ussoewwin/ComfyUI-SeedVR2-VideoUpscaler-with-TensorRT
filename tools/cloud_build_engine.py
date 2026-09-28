@@ -122,7 +122,14 @@ def _build_managed(onnx_path: str, ws_gb: float):
 
     logger = trt.Logger(trt.Logger.WARNING)
     builder = trt.Builder(logger)
-    builder.set_gpu_allocator(_ManagedAlloc())
+    allocator = _ManagedAlloc()
+    try:
+        # "gpu_allocator" is a write-only property in tensorrt_rtx (no getter);
+        # assigning it installs the custom IGpuAllocator for all build allocations.
+        builder.gpu_allocator = allocator
+    except Exception as exc:
+        print(f"WARNING: could not install the managed GPU allocator: {exc}", flush=True)
+        return None
     network = builder.create_network()
     parser = trt.OnnxParser(network, logger)
     if not parser.parse_from_file(onnx_path):
