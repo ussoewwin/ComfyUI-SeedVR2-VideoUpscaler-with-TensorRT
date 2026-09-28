@@ -1,80 +1,81 @@
-# SeedVR2 — TensorRT VAE 最適化とエンコーダー包括的改修 技術解説仕様書
+# SeedVR2 Video Upscaler — TensorRT VAE Optimization and Encoder Refactoring Technical Guide
 
 <table align="center">
   <tr>
-    <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>JA</b></font></td>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><font color="#4b5563"><b>Technical Guide</b></font></td>
+    <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>EN</b></font></td>
+    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="../zhmd/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md"><font color="#4b5563"><b>中文</b></font></a></td>
   </tr>
 </table>
 
-対象リポジトリ: `ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder`  
-対象モジュール: `src/core/trt_decoder.py`, `src/core/trt_encoder.py`, `src/core/infer.py`, `src/interfaces/trt_vae_model_loader.py`, `src/interfaces/__init__.py`, `__init__.py`, `src/interfaces/video_upscaler.py`
+Target custom node: `ComfyUI/custom_nodes/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder`  
+Target core modules: `src/core/trt_decoder.py`, `src/core/trt_encoder.py`, `src/core/infer.py`, `src/interfaces/trt_vae_model_loader.py`, `src/interfaces/__init__.py`, `__init__.py`, `src/interfaces/video_upscaler.py`
 
 ---
 
-## 1. テーマ概要
+## 1. Overview of Key Themes
 
-### テーマ①: 3つの改善 (v1.5.4 左上ノイズ・チェッカーボード偽影の撲滅とゼロ VRAM 膨張アーキテクチャ)
-1. **Studio互換の静的シェイプ判定ガード (Studio-Compatible Static Shape Check)**  
-   `current_shape != target_shape` の時のみ `context.set_input_shape` を実行。静的エンジンへの冗長な形状再設定をバイパスし、TensorRT 内部のスクラッチパッドバッファ再確保によるダーティ VRAM の再摂食を遮断。
-2. **決定論的ダミーウォームアップ実行 (Deterministic Dummy Warmup Execution)**  
-   空間タイリングループ突入直前に、ゼロ値テンソル（`warmup_in` / `warmup_out`）を用いた 1 パスの非同期推論およびストリーム同期を実行。TensorRT 内部の畳み込みワークスペースおよびテンポラルアキュムレータラインをサニタイズ（ゼロクリア）し、先頭タイル（`y=0, x=0`）でのゴミデータ読み出しによるノイズ化を完全に撲滅。
-3. **ゼロ VRAM 膨張アーキテクチャ (Zero VRAM Bloat Architecture)**  
-   空間外周の無理なパディング（結果バッファを2倍〜3倍に膨らませる外周パディング）を排除し、Float32 累積バッファ（`result` と `weights`）の VRAM 浪費を防ぎ、最小限の VRAM 消費でネイティブ解像度の高速エンコード/デコードを維持。
+### Theme 1: Three Core Improvements (v1.5.4 Elimination of Top-Left Mosaic Artifacts & Zero VRAM Bloat Architecture)
+1. **Studio-Compatible Static Shape Check Guard (`Studio-Compatible Static Shape Check`)**  
+   Only call `context.set_input_shape` when `current_shape != target_shape`. For static-shape engines built for exact tile dimensions, redundant re-configurations are bypassed, completely preventing TensorRT's internal scratchpad memory re-allocations that previously ingested dirty VRAM residue.
+2. **Deterministic Dummy Warmup Execution (`Deterministic Dummy Warmup Execution`)**  
+   Prior to entering the spatial tiling loop, execute an asynchronous 1-pass dummy inference with zero-filled tensors (`warmup_in` / `warmup_out`) and synchronize the CUDA stream. This forces TensorRT to sanitize all internal convolution workspaces, scratchpad buffers, and temporal accumulator lines, permanently eliminating uninitialized garbage memory reads on the first tile (`y=0, x=0`).
+3. **Zero VRAM Bloat Architecture (`Zero VRAM Bloat Architecture`)**  
+   Eliminated forced full-tile outer padding that would otherwise inflate float32 accumulation buffers (`result` and `weights`) by 2x–3x. Local boundary padding ensures minimal VRAM consumption, preventing out-of-memory (OOM) errors on 16GB GPUs while maintaining native resolution throughput.
 
-### テーマ②: エンコーダーの修正 (デコーダーとの完全対称化・フォールバック排除・短尺バッチ完動・ノード名UI統一)
-1. **短尺バッチの Pad & Crop 1-shot 実行 & サイレント FP16 フォールバックの完全根絶**  
-   バッチサイズがエンジンフレーム未満（例: `batch_size=5` に対し 21f エンジン）の際にスライス生成で `IndexError` が発生し、外側の `try...except` でサイレントに PyTorch 標準 FP16 VAE に転落していた問題を根絶。最終フレーム反復パディングによる 1-shot 実行と潜在空間クロップ（Pad & Crop）を導入し、TRT 未導入・エンジン不在時は即座に `RuntimeError` を送出。
-2. **動的エンジン自動選択機構 (`pick_engine_frames` / `_available_engine_frames`) の実装**  
-   ディスク上の `tensorrt_backend/artifacts` および `models/tensorrt/seedvr2` を走査し、完全一致 → 最大収容エンジン → 最小エンジン（パディング実行）の優先順位で自動選択。
-3. **ノード名・UI スキーマのデコーダー完全対称化 (`SeedVR2LoadTensorRTVAEEncoder`)**  
-   旧 `SeedVR2LoadTensorRTVAEModel` からエンコーダー専用ノード `SeedVR2LoadTensorRTVAEEncoder` への改名（互換エイリアス保持）、UI 表示名、説明文、入力ソケット、ツールチップ、出力ソケットをデコーダー側（`SeedVR2LoadTensorRTVAEDecoder`）と完全に対称に整備。
-
----
-
-## 2. 修正前は何が問題だったのか (根本原因分析)
-
-### 2.1 テーマ①: 左上ノイズ・チェッカーボード偽影と VRAM 膨張
-1. **遅延スクラッチパッド確保とダーティ VRAM の再摂食**  
-   ComfyUI では、Phase 1 (VAE Encode) → Phase 2 (DiT Upscale) → Phase 3 (VAE Decode) が単一の Python プロセス内で順次実行され、PyTorch CUDA キャッシュアロケータを共有している。Phase 2 で DiT が大量の VRAM を消費した後に解放したメモリ領域には、直前のアテンション計算のビット残骸（ダーティ VRAM）がゼロクリアされずに残存する。
-2. **静的エンジンに対する冗長な `set_input_shape` 呼び出し**  
-   従来のコードは、毎タイル・毎チャンクで無条件に `context.set_input_shape` を呼び出していた。TensorRT は形状変更要求を受けると、内部の畳み込みスクラッチパッドメモリを破棄して再確保を行う。この再確保先が DiT の解放した未初期化ダーティ VRAM と重なり、ゴミデータがバッファに流入した。
-3. **因果 3D 畳み込み (`InflatedCausalConv3d`) の時序アキュムレータ汚染**  
-   SeedVR2 VAE の因果 3D 畳み込みは時間軸の文脈を保持するため、内部に時序累算バッファを持つ。最初のタイル（`y=0, x=0`）の計算時、内部カーネルが未初期化の浮動小数点ゴミデータを読み出し、残差ブロックを経て極端な異常値・NaN・RGB 超過値へと増幅。これが `[-2.0, 2.0]` にクランプされた結果、左上ブロックに市松模様・チェッカーボード状のカラーモザイクノイズとなって現れた。
-4. **横画面特異性**  
-   DiT の 720P ウィンドウアテンション（`make_720Pwindows_bysize`）において、横画面（16:9 や 4:3）では水平ウィンドウ数（`nw`）が多く、PyTorch アロケータ内でワイドストライドのテンソル解放パターンが生じる。この解放ブロックの配置が TensorRT スクラッチパッドの要求ストライドと完全に合致し、横画面でのみ左上ノイズが顕著に発現した。
-5. **外周パディングによる VRAM 膨張の弊害**  
-   これを回避しようとして外周をフルタイル単位でパディングする対症療法をとると、Float32 累積バッファ（`result`, `weights`）が 2倍〜3倍に膨れ上がり、16GB VRAM 環境での OOM 頻発を招いた。
-
-### 2.2 テーマ②: エンコーダーの構造的欠陥・サイレント FP16 転落
-1. **短尺バッチでの `IndexError` クラッシュ**  
-   従来の `_trt_encode_batch` は、`resolve_engine_frames()` で固定エンジン（最大フレーム数、例: 29f）のみを取得していた。ComfyUI 側で `batch_size=5` などの短尺バッチが指定された場合、ストライド計算 `range(0, total - engine_frames + 1, stride)` が空リスト `[]` となり、直後の `starts[-1]` が `IndexError: list index out of range` を送出して破綻していた。
-2. **サイレント FP16 フォールバックの悪弊**  
-   この `IndexError` が外側の `try ... except` で捕捉され、何のエラー通知も警告もなく、裏で PyTorch 標準の FP16 VAE に処理が転落していた。ユーザーは TensorRT エンコーダーを選択しているにもかかわらず、実際には極めて低速な PyTorch CPU/CUDA FP16 実装で実行され、高速化の恩恵を完全に喪失していた。
-3. **動的エンジン選択の欠落**  
-   デコーダー側ではディスク上のエンジンを走査して最適なフレーム数を選択する `pick_engine_frames` が実装されていたが、エンコーダー側はハードコードされた候補リストしか持たず、任意のフレーム数（9f, 13f, 17f, 21f 等）への追従ができなかった。
-4. **ノード設計の非対称性と名称の混乱**  
-   デコーダー側が `SeedVR2LoadTensorRTVAEDecoder` として整理されていたのに対し、エンコーダー側は `SeedVR2LoadTensorRTVAEModel` という曖昧な名称のままであり、レガシーのフォールバック用ウィジェット（`encode_tiled`, `encode_tile_size` 等）が残存し、UI や引数の対称性が崩れていた。
+### Theme 2: Encoder Refactoring (Decoder Parity, Fallback Elimination, Short-Batch Execution, Node Alignment)
+1. **Short-Batch Pad & Crop 1-Shot Execution & Complete Elimination of Silent FP16 Fallback**  
+   When the input video batch length is smaller than the engine frames (e.g., workflow default `batch_size=5` with a 21f engine), the previous code suffered an `IndexError` on slice indexing (`starts[-1]`), triggering a silent `try...except` fallback to slow PyTorch standard FP16 VAE. By implementing last-frame replication padding (`total < engine_video_frames`), running 1-shot TRT encode, and cropping back to the true latent length `(total - 1) // 4 + 1`, short batches complete at full TRT speed. Missing libraries or missing engines now raise explicit `RuntimeError`s rather than silently degrading performance.
+2. **Dynamic Engine Selection Architecture (`pick_engine_frames` / `_available_engine_frames`)**  
+   Dynamically scans both `tensorrt_backend/artifacts` and `models/tensorrt/seedvr2` directories. Selects engines based on strict priority: exact match → largest fitting engine → smallest engine with padding and cropping.
+3. **Node Renaming & UI Schema Symmetry (`SeedVR2LoadTensorRTVAEEncoder`)**  
+   Renamed `SeedVR2LoadTensorRTVAEModel` to `SeedVR2LoadTensorRTVAEEncoder` (with backward compatibility alias), matching `SeedVR2LoadTensorRTVAEDecoder` identically across node ID, display name, description, input combos (`model`, `device`, `engine_frames`), tooltips, and `SEEDVR2_VAE` outputs.
 
 ---
 
-## 3. 新規作成・修正したファイル名
+## 2. Pre-Fix Root Cause Analysis
 
-| ファイルパス | 変更種別 | 改修内容の要約 |
+### 2.1 Theme 1: Top-Left Mosaic / Checkerboard Artifacts & VRAM Bloat
+1. **Deferred Scratchpad Allocation and Dirty VRAM Ingestion**  
+   In ComfyUI, Phase 1 (VAE Encode), Phase 2 (DiT Upscale), and Phase 3 (VAE Decode) execute sequentially within a single long-running Python process and share PyTorch's CUDA caching allocator. In Phase 2, the DiT model consumes substantial GPU memory and releases large workspaces back to the allocator. This released CUDA memory is not zeroed by the GPU driver or PyTorch, retaining dirty bit residue from preceding attention operations.
+2. **Redundant `set_input_shape` Invocations on Static Engines**  
+   The previous decoder code unconditionally called `context.set_input_shape` on every batch and chunk. TensorRT interprets a `set_input_shape` call as a geometric re-configuration signal, causing it to discard existing internal convolution scratchpads and re-allocate them from the CUDA allocator. This re-allocation mapped directly over dirty memory blocks just released by DiT.
+3. **Inflated Causal 3D Convolution Temporal Accumulator Contamination**  
+   The SeedVR2 VAE architecture relies on `InflatedCausalConv3d` layers that maintain temporal history and multi-frame accumulator states. During the calculation of the very first spatial tile (`y=0, x=0`), internal convolution kernels read uninitialized dirty floats from the scratchpad. These invalid values cascaded through residual blocks, generating extreme floating-point magnitudes, NaNs, and out-of-gamut values. Clamped to `[-2.0, 2.0]`, they materialized as high-frequency colored checkerboard / mosaic blocks in the top-left corner.
+4. **Landscape Video Specificity**  
+   SeedVR2 DiT employs 720P window attention (`make_720Pwindows_bysize`). On landscape aspect ratios (16:9, 4:3), the horizontal window count (`nw`) produces wide-stride tensor allocations in the CUDA allocator pool. When released, their stride and block boundaries align precisely with TensorRT scratchpad buffer requests, injecting dirty bits directly into the first tile's workspace.
+5. **VRAM Inflation Pitfall of Outer Padding**  
+   Attempting to solve boundary issues by padding the entire canvas up to full tile multiples doubled or tripled the memory footprint of Float32 accumulation buffers (`result` and `weights`), causing severe OOM crashes on 16GB VRAM GPUs.
+
+### 2.2 Theme 2: Encoder Architectural Defects and Silent FP16 Fallback
+1. **Short-Batch `IndexError` Crashes**  
+   The legacy `_trt_encode_batch` relied solely on `resolve_engine_frames()`, which returned only the largest static engine (e.g., 29f). When processing shorter clips (such as `batch_size=5`), `range(0, total - engine_frames + 1, stride)` evaluated to an empty list `[]`. Accessing `starts[-1]` immediately triggered an unhandled `IndexError: list index out of range`.
+2. **Deceptive Silent FP16 Fallback**  
+   The `IndexError` was caught by an outer `try ... except` block that quietly fell back to PyTorch standard FP16 VAE without warning or logging an error. Users configuring the TensorRT VAE encoder had their workflows secretly run through the slow PyTorch VAE implementation, completely losing hardware acceleration.
+3. **Absence of Dynamic Engine Discovery**  
+   Unlike the decoder, the encoder lacked a dynamic filesystem engine scanner (`pick_engine_frames`), remaining locked to hardcoded frame lists and unable to discover custom engines (e.g., 9f, 13f, 17f, 21f).
+4. **Asymmetrical Node Architecture and UI Confusion**  
+   While the decoder was cleanly exposed as `SeedVR2LoadTensorRTVAEDecoder`, the encoder remained under the ambiguous name `SeedVR2LoadTensorRTVAEModel` and retained legacy fallback widgets (`encode_tiled`, `encode_tile_size`, `encode_tile_overlap`, `offload_device`), breaking interface symmetry.
+
+---
+
+## 3. Added and Modified Files
+
+| File Path | Action | Description of Modifications |
 | :--- | :--- | :--- |
-| `src/core/trt_decoder.py` | 修正 | テーマ①: 静的シェイプ判定ガード、決定論的ダミーウォームアップ、ゼロ VRAM 膨張タイリング |
-| `src/core/trt_encoder.py` | 修正 | テーマ①のエンコーダー移植＋テーマ②: `pick_engine_frames`, `_available_engine_frames`, Pad & Crop 1-shot |
-| `src/core/infer.py` | 修正 | テーマ②: `_trt_encode_batch` 短尺バッチ Pad & Crop 完動化、サイレント FP16 転落の完全根絶、`RuntimeError` 直送出 |
-| `src/interfaces/trt_vae_model_loader.py` | 修正 | テーマ②: `_available_engine_frames` マルチパス走査、`SeedVR2LoadTensorRTVAEEncoder` 改名、UI デコーダー対称化、互換エイリアス |
-| `src/interfaces/__init__.py` | 修正 | テーマ②: `SeedVR2LoadTensorRTVAEEncoder` のノード登録と `__all__` エクスポート |
-| `__init__.py` | 修正 | テーマ②: `SeedVR2LoadTensorRTVAEEncoder (⚡TRT)` の起動ロード・インポート登録 |
-| `src/interfaces/video_upscaler.py` | 修正 | テーマ②: エンコーダー/デコーダー双方の TRT 検出による `torch.compile` スキップ、ドキュメント更新 |
+| `src/core/trt_decoder.py` | Modified | Implemented static shape check guard, deterministic dummy warmup, and zero VRAM bloat tiling. |
+| `src/core/trt_encoder.py` | Modified | Ported static shape check guard, deterministic dummy warmup, dynamic engine scanner, and pad & crop 1-shot execution. |
+| `src/core/infer.py` | Modified | Updated `_trt_encode_batch` to support short batches via pad & crop, eliminated silent FP16 fallback, and added explicit `RuntimeError` dispatch. |
+| `src/interfaces/trt_vae_model_loader.py` | Modified | Renamed node to `SeedVR2LoadTensorRTVAEEncoder`, symmetrical UI schema with decoder, multi-path engine scanning, and backward compatibility alias. |
+| `src/interfaces/__init__.py` | Modified | Registered `SeedVR2LoadTensorRTVAEEncoder` in node extension list and `__all__` export table. |
+| `__init__.py` | Modified | Updated startup log and imports to display `SeedVR2LoadTensorRTVAEEncoder (⚡TRT)`. |
+| `src/interfaces/video_upscaler.py` | Modified | Updated docstrings and added dual TRT engine availability check for skipping `torch.compile`. |
+| `md/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md` | Created | Complete English technical guide. |
 
 ---
 
-## 4. 新規作成・修正したコード全文
+## 4. Full Source Code of Modified Components
 
-### 4.1 `src/core/trt_encoder.py` (コード全文)
+### 4.1 `src/core/trt_encoder.py` (Complete 369 lines)
 
 ```python
 """Dedicated Full-Batch TensorRT VAE encoder for ComfyUI SeedVR2.
@@ -449,7 +450,7 @@ def release() -> None:
 
 ---
 
-### 4.2 `src/core/infer.py` (改修対象の TRT エンコード関連関数全文)
+### 4.2 `src/core/infer.py` (TRT Encode Section Full Code)
 
 ```python
 def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
@@ -544,7 +545,7 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
 
 ---
 
-### 4.3 `src/interfaces/trt_vae_model_loader.py` (改修対象のローダー全文)
+### 4.3 `src/interfaces/trt_vae_model_loader.py` (Complete Loader Classes & Helpers)
 
 ```python
 def _available_engine_frames(kind: str = "encoder") -> list[str]:
@@ -712,7 +713,7 @@ class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):
 
 ---
 
-### 4.4 `src/interfaces/__init__.py` (コード全文)
+### 4.4 `src/interfaces/__init__.py` (Complete 54 lines)
 
 ```python
 """
@@ -774,7 +775,7 @@ __all__ = [
 
 ---
 
-### 4.5 `__init__.py` (コード全文)
+### 4.5 `__init__.py` (Complete 140 lines)
 
 ```python
 """
@@ -922,20 +923,28 @@ __all__ = ["comfy_entrypoint", "SeedVR2Extension"]
 
 ---
 
-## 5. その技術的意味と設計意図
+## 5. Technical Significance and Architectural Impact
 
-### 5.1 テーマ①の技術的意義
-1. **シェイプ判定ガードによるスクラッチパッドバッファの再利用保護**  
-   `current_shape != target_shape` の条件分岐を挿入することにより、固定タイルサイズ（Encoder: 512x512, Decoder: 256x256）でビルドされた静的 TensorRT エンジンに対しては、初期化以降 `context.set_input_shape` の呼び出しが完全にスキップされる。これにより、TensorRT の内部メモリマネージャがトリガーする「スクラッチパッドの再確保とアドレス空間の破棄」を防止し、初期割り当てされたクリーンなバッファが後続の全タイルでそのまま維持される。
-2. **決定論的ウォームアップによる未初期化アキュムレータのサニタイズ**  
-   タイリング処理を開始する前に、ゼロで満たされたダミーバッファを用いて 1 回だけ `execute_async_v3` を実行する。これにより、TensorRT 内部の畳み込みワークスペース、テンポラルキャッシュ、CUBLAS/CUDNN の作業領域がゼロデータで強制的に初期化（上書き）される。この結果、最初の実データタイル（`y=0, x=0`）の計算時に未初期化 VRAM のゴミデータを読み出す可能性が物理的に排除され、左上のチェッカーボード／市松模様／高周波カラーノイズが 100% 根絶される。
-3. **外周パディングの排除による VRAM 最小化**  
-   タイル境界と画像境界の余白処理を、結果バッファ全体の無制限な拡張ではなく、必要最小限のローカルパディングとスライスに限定した。これにより、Float32 累積バッファ（`result`, `weights`）の巨大化を防ぎ、16GB 等の標準的 GPU 環境でも VRAM 圧迫（OOM）を一切起こさずにネイティブな処理能力を発揮できる。
+### 5.1 Technical Significance of Theme 1
+1. **Preservation of Scratchpad Memory Through Shape Guarding**  
+   Introducing the `current_shape != target_shape` condition ensures that static TensorRT engines (Encoder: 512x512, Decoder: 256x256) bypass `context.set_input_shape` after initial allocation. This halts TensorRT's internal cycle of buffer invalidation, deallocation, and reacquisition from the active CUDA pool, leaving cleanly mapped GPU addresses undisturbed across all spatial tiles.
+2. **Sanitization of Internal Accumulators via Deterministic Warmup**  
+   Executing an asynchronous zero-filled dummy pass (`execute_async_v3`) prior to real inference forces TensorRT, cuDNN, and CUBLAS to fully initialize their internal scratchpad buffers and causal temporal convolution accumulators with clean zeros. Reading uninitialized float residue from preceding DiT steps during tile `(y=0, x=0)` becomes physically impossible, permanently resolving the top-left checkerboard, mosaic, and chromatic noise artifacts.
+3. **Elimination of VRAM Bloat**  
+   Restricting spatial padding to local tile alignment rather than expanding the entire output canvas preserves minimal canvas bounds. Float32 accumulation buffers (`result` and `weights`) maintain their compact form factor, guaranteeing stable execution without VRAM exhaustion (OOM) on 16GB GPUs.
 
-### 5.2 テーマ②の技術的意義
-1. **Pad & Crop による短尺バッチの完全救済と 1-shot TRT 完走**  
-   ワークフローで設定されたバッチサイズ（例: 5 フレーム）が利用可能なエンジン（21 フレーム等）より短い場合でも、最終フレームを複製してエンジン長までパディング（`sample[:, :, -1:, :, :].repeat(...)`）し、1-shot で TRT エンコードを実行した上で、必要な潜在長 `(total - 1) // 4 + 1` にクロップして返却する。これにより、短尺クリップ処理時の `IndexError` が物理的に発生しなくなり、常に最大速度の TRT エンジンでエンコードが完走する。
-2. **サイレント FP16 転落の完全排除とフェイルファスト設計**  
-   「TRT エンコーダーを選択した以上、TRT で完動させるか、環境不備があれば明瞭な例外で停止させる」という厳格な原則を確立した。TRT ライブラリ不在やエンジン不在時にサイレントに FP16 へ転落してユーザーを欺く挙動を排し、即座に `RuntimeError` を送出することで、意図しない低速動作や無駄な GPU リソース消費を即座に検知・防止できる。
-3. **アーキテクチャの完全対称性と直感的な UI 設計**  
-   デコーダー（`SeedVR2LoadTensorRTVAEDecoder`）とエンコーダー（`SeedVR2LoadTensorRTVAEEncoder`）の入出力、設定項目、内部ロジック（`pick_engine_frames`, Pad & Crop, シェイプガード, ウォームアップ）が 100% 同一の対称構造となった。ユーザーはエンコード・デコードそれぞれで独立して最適エンジンフレーム（例: encode 21f / decode 21f）を選択可能となり、ワークフローの堅牢性と保守性が飛躍的に向上した。
+### 5.2 Technical Significance of Theme 2
+1. **Short-Batch Recovery via Pad & Crop 1-Shot Execution**  
+   Even when the requested workflow batch length (e.g., 5 frames) is shorter than existing engine configurations (e.g., 21 frames), replicating the final frame (`sample[:, :, -1:, :, :].repeat(...)`) enables direct 1-shot TensorRT execution. Slicing back to the exact required latent length `(total - 1) // 4 + 1` guarantees that short batches never crash with `IndexError` and always execute at maximum hardware speed.
+2. **Fail-Fast Architecture Eliminating Silent FP16 Fallbacks**  
+   Establishing the invariant that selecting a TensorRT component requires TensorRT execution eliminates silent fallback traps. If runtime dependencies or engine plans are absent, the system raises an explicit `RuntimeError`, providing actionable debugging information and preventing unintended slow PyTorch FP16 computation.
+3. **Full Architectural Symmetry and Intuitive Node Layout**  
+   The encoder (`SeedVR2LoadTensorRTVAEEncoder`) and decoder (`SeedVR2LoadTensorRTVAEDecoder`) now operate under an identical design paradigm. Both feature symmetric options, dynamic engine resolution, and independent engine frame selection, delivering a robust, clean, and maintainable pipeline.
+
+---
+
+### Sync & Remote Status
+- **Technical Document Location**: [`md/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md`](file:///d:/USERFILES/GitHub/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/md/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md)
+- **Commit**: [`78769b8`](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/commit/78769b8) `docs: add technical documentation on TRT VAE improvements and encoder refactoring`
+- **Remote Synchronization**: Fully pushed to `origin/main`. Working tree clean.
+- **Live Custom Node Directory**: Synchronized byte-for-byte to `D:\USERFILES\ComfyUI\ComfyUI\custom_nodes\ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder\md\SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md`.
