@@ -93,12 +93,12 @@ def main() -> int:
     else:
         blob = _try_build(args.workspace_gb)
         if blob is None:
-            # A build can OOM when the configured allocation (+ ~0.19 GB overhead) does not fit
-            # in the currently free VRAM (typical on 16GB cards while other apps hold VRAM).
-            # Retry with progressively smaller allocations: a smaller pool still builds, using
-            # lower-memory tactics.
-            for ws_try in (8.0, 6.0, 4.0, 3.0, 2.0, 1.5, 1.0):
-                if ws_try >= args.workspace_gb:
+            # Retry with a spread of allocation sizes: some graphs need a LARGER pool before
+            # TRT will accept the build (the requested size always came back as
+            # "configured size + ~0.19 GB", and the build failed even when far more VRAM
+            # was free), while others succeed with a smaller one.
+            for ws_try in (24.0, 28.0, 32.0, 12.0, 8.0, 6.0, 4.0, 3.0, 2.0, 1.5, 1.0):
+                if ws_try == args.workspace_gb:
                     continue
                 print(f"WARNING: build failed at {args.workspace_gb:g} GB; retrying with {ws_try:g} GB...", flush=True)
                 blob = _try_build(ws_try)
