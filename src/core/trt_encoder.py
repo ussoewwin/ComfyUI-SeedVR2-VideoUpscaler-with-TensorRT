@@ -160,7 +160,6 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     overlap_latent = overlap // 8
     result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
     weights = torch.zeros_like(result)
-    dc_result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
 
     with _ENCODE_LOCK, torch.cuda.stream(stream):
         # Warmup run: forces TensorRT to allocate and bind internal scratchpad memory.
@@ -194,26 +193,17 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
                                 f"min={float(_dbg_tv.min()):.4f} max={float(_dbg_tv.max()):.4f} "
                                 f"std={_dbg_sd:.5f}" + ("  <<< BLACK?" if _dbg_sd < 0.05 else ""))
                 ly, lx = y // 8, x // 8
-                # DC offset correction: estimate the tile's true DC from its
-                # accurate center (inside the receptive-field-poor edge ring),
-                # subtract it, and restore it later as a weighted average.
-                edge = overlap_latent // 2
-                center = tile_output[:, :, :, edge:tile_lat - edge, edge:tile_lat - edge]
-                dc = center.mean(dim=(3, 4), keepdim=True)
-                corrected = tile_output.float() - dc.float()
                 wy = _feather(tile_lat, overlap_latent, y != ys[0], y != ys[-1], tile_output.device)
                 wx = _feather(tile_lat, overlap_latent, x != xs[0], x != xs[-1], tile_output.device)
                 window = (wy[:, None] * wx[None, :]).view(1, 1, 1, tile_lat, tile_lat)
-                result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += corrected * window
-                dc_result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += dc.float() * window
+                result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += tile_output.float() * window
                 weights[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += window
                 del tile_input, tile_output
 
-    restored = (result + dc_result) / weights.clamp_min(1e-6)
-    encoded = restored[:, :16, :, :latent_h, :latent_w].to(sample.dtype)
+    encoded = (result / weights.clamp_min(1e-6))[:, :16, :, :latent_h, :latent_w].to(sample.dtype)
     if _TRT_DEBUG:
         _trt_dbg_stats(f"enc_chunk_out_{frames}f", encoded)
-    del source, result, weights, dc_result
+    del source, result, weights
     import gc as _gc
     _gc.collect()
     if torch.cuda.is_available():
