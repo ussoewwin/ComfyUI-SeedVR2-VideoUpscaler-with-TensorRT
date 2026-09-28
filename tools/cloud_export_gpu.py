@@ -4,12 +4,16 @@ Traces a static ONNX graph for the TensorRT VAE engines.
 
 OOM strategy (--device auto, default):
     1) GPU trace with the default PyTorch allocator (reference graph);
-    2) on CUDA OOM: re-run in a FRESH PROCESS with --allocator managed.  That
-       swaps PyTorch's CUDA allocator for one backed by cudaMallocManaged (UVM),
-       so VRAM overflows are paged into system RAM - a 31GB RTX 5090 with plenty
-       of host RAM can then trace graphs whose working set exceeds VRAM.  The
-       graph stays the SAME legacy (reference) graph;
+    2) on CUDA OOM: free EVERYTHING this process holds, then re-run in a FRESH
+       PROCESS with --allocator managed.  That swaps PyTorch's CUDA allocator
+       for one backed by cudaMallocManaged (UVM), so VRAM overflows are paged
+       into system RAM - a 31GB RTX 5090 with plenty of host RAM can then trace
+       graphs whose working set exceeds VRAM.  The graph stays the SAME legacy
+       (reference) graph;
     3) last resort: CPU float16 trace (system RAM, CUDA hidden).  Very slow.
+
+If --allocator managed cannot be built, the process FAILS FAST (no silent CPU
+fallback) so the cause is visible in the log.
 
 --export-mode dynamo is available but NOT used automatically: the torch.export
 based exporter decomposes ops differently from the reference exporter, so its
@@ -39,14 +43,20 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "garbage_collection_threshold:0
 import torch
 import yaml
 
+# NOTE: no <cuda_runtime.h> on purpose - the two runtime functions are declared
+# by hand so the build works even when only partial CUDA headers are installed
+# (the pip nvidia packages ship cuda_runtime.h without crt/host_config.h).
 _MANAGED_ALLOC_SRC = r"""
-#include <cuda_runtime.h>
 #include <cstddef>
+
+typedef struct CUstream_st* cudaStream_t;
+extern "C" int cudaMallocManaged(void** devPtr, std::size_t size, unsigned int flags);
+extern "C" int cudaFree(void* devPtr);
 
 extern "C" void* seedvr2_managed_malloc(std::size_t size, int device, cudaStream_t stream) {
     (void)device; (void)stream;
     void* p = nullptr;
-    if (cudaMallocManaged(&p, size) != cudaSuccess) {
+    if (cudaMallocManaged(&p, size, 1u /* cudaMemAttachGlobal */) != 0) {
         return nullptr;
     }
     return p;
@@ -66,40 +76,49 @@ def _install_managed_allocator() -> bool:
 
     VRAM overflows are then paged into system RAM, so a trace whose working set
     exceeds the card's VRAM still completes (this is the code path that "fully
-    uses" an RTX 5090 together with a large amount of host RAM).  cudaMallocManaged
-    is a CUDA *runtime* call, so a plain C++ compiler suffices (no nvcc needed).
+    uses" an RTX 5090 together with a large amount of host RAM).
     """
     import ctypes
+    import glob as _glob
 
     so_path: str | None = None
 
-    # 1) Let torch build the tiny shared library (it knows the CUDA include/lib paths).
+    # 1) Build the tiny shared library with torch's cpp_extension (knows all paths).
     try:
-        from torch.utils.cpp_extension import load_inline
+        from torch.utils.cpp_extension import _get_build_directory, load_inline
 
-        mod = load_inline(
-            name="seedvr2_managed_alloc",
-            cpp_sources=_MANAGED_ALLOC_SRC,
-            with_cuda=True,
-            verbose=False,
-            extra_cflags=["-O1"],
-        )
-        so_path = str(Path(mod.__file__))
+        try:
+            load_inline(
+                name="seedvr2_managed_alloc",
+                cpp_sources=_MANAGED_ALLOC_SRC,
+                is_python_module=False,
+                with_cuda=True,
+                verbose=False,
+                extra_cflags=["-O2"],
+            )
+        except Exception as exc:
+            print(f"[MEM] cpp_extension build/import failed ({exc}); checking build dir...", flush=True)
+        try:
+            build_dir = Path(_get_build_directory("seedvr2_managed_alloc", verbose=False))
+            sos = sorted(build_dir.glob("**/*.so"))
+            if sos:
+                so_path = str(sos[-1])
+                print(f"[MEM] found built allocator library: {so_path}", flush=True)
+        except Exception as exc:
+            print(f"[MEM] could not locate build dir: {exc}", flush=True)
     except Exception as exc:
-        print(f"[MEM] cpp_extension build failed ({exc}); trying direct gcc...", flush=True)
+        print(f"[MEM] cpp_extension unavailable ({exc}); trying direct gcc...", flush=True)
 
-    # 2) Fallback: compile with gcc against discovered CUDA runtime headers/libs.
+    # 2) Fallback: compile with gcc (no CUDA headers needed) and link libcudart.
     if so_path is None:
         try:
-            import glob as _glob
             import site as _site
             import subprocess as _sp
             import tempfile
 
             search_roots: list[Path] = []
             try:
-                for sp in _site.getsitepackages():
-                    search_roots.append(Path(sp))
+                search_roots += [Path(sp) for sp in _site.getsitepackages()]
             except Exception:
                 pass
             try:
@@ -108,28 +127,28 @@ def _install_managed_allocator() -> bool:
                 pass
             search_roots.append(Path(torch.__file__).resolve().parent.parent)
 
-            include_dirs: list[str] = []
-            lib_dirs: list[str] = []
+            lib_candidates: list[str] = []
             for root in search_roots:
-                include_dirs += _glob.glob(str(root / "nvidia" / "*" / "include"))
-                lib_dirs += _glob.glob(str(root / "nvidia" / "*" / "lib"))
-            cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
-            if cuda_home:
-                include_dirs.append(str(Path(cuda_home) / "include"))
-                lib_dirs.append(str(Path(cuda_home) / "lib64"))
+                lib_candidates += _glob.glob(str(root / "nvidia" / "**" / "lib" / "libcudart.so*"), recursive=True)
+            lib_candidates += _glob.glob("/usr/local/cuda*/lib64/libcudart.so*")
+            lib_candidates += _glob.glob("/usr/lib/x86_64-linux-gnu/libcudart.so*")
+            lib_path = next((c for c in lib_candidates if os.path.isfile(c)), None)
+            print(f"[MEM] libcudart: {lib_path}", flush=True)
 
-            src_file = Path(tempfile.mkdtemp()) / "seedvr2_managed_alloc.cpp"
+            src_dir = Path(tempfile.mkdtemp())
+            src_file = src_dir / "seedvr2_managed_alloc.cpp"
             src_file.write_text(_MANAGED_ALLOC_SRC, encoding="utf-8")
-            out_so = src_file.with_suffix(".so")
-            cmd = ["gcc", "-shared", "-fPIC", "-O1", "-o", str(out_so), str(src_file)]
-            for d in include_dirs:
-                cmd += ["-I", d]
-            for d in lib_dirs:
-                cmd += ["-L", d]
-            cmd += ["-lcudart"]
+            out_so = src_dir / "seedvr2_managed_alloc.so"
+            cmd = ["gcc", "-shared", "-fPIC", "-O2", "-o", str(out_so), str(src_file)]
+            if lib_path:
+                cmd.append(lib_path)
+                cmd += ["-Wl,-rpath," + str(Path(lib_path).parent)]
+            else:
+                cmd += ["-lcudart"]
             r = _sp.run(cmd, capture_output=True, text=True)
             if r.returncode == 0 and out_so.exists():
                 so_path = str(out_so)
+                print(f"[MEM] gcc built allocator library: {so_path}", flush=True)
             else:
                 print(f"[MEM] gcc build failed: {(r.stderr or '').strip()[:400]}", flush=True)
         except Exception as exc:
@@ -235,7 +254,9 @@ def main() -> int:
 
     if args.allocator == "managed":
         if not _install_managed_allocator():
-            print("[MEM] WARNING: managed allocator unavailable; continuing with the default allocator.", flush=True)
+            print("ERROR: --allocator managed requested but the allocator could not be built. "
+                  "Aborting (no CPU fallback). See the [MEM] lines above.", flush=True)
+            return 3
 
     cuda_available = torch.cuda.is_available()
     if args.device == "cuda" and not cuda_available:
@@ -368,6 +389,26 @@ def main() -> int:
         if oom_hit:
             print("[GPU-offload] GPU trace hit CUDA OOM.", flush=True)
             if args.allocator != "managed":
+                # The failed trace keeps a large amount of GPU memory referenced; free it all
+                # BEFORE handing over to the child, otherwise the child starts with almost no
+                # free VRAM (the "Initial CUDA memory" line in its log would show that).
+                try:
+                    del mod
+                    del dummy
+                    del vae
+                except Exception:
+                    pass
+                for _ in range(3):
+                    gc.collect()
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                try:
+                    free_b, _total_b = torch.cuda.mem_get_info()
+                    print(f"[GPU-offload] parent released GPU memory: {free_b / 2**30:.2f} GiB free now", flush=True)
+                except Exception:
+                    pass
                 # Re-run in a fresh process with the managed-memory allocator: VRAM overflows
                 # are paged into system RAM, so a trace working set larger than VRAM can still
                 # complete while keeping the SAME legacy (reference) graph.
