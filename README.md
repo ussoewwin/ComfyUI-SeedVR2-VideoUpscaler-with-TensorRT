@@ -23,9 +23,9 @@ This repository is a fork of the official repository ([https://github.com/numz/C
 
 ![Usage Example - Full Workflow](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_01.png)
 
-### TensorRT VAE Decoder Node
+### TensorRT VAE Encoder & Decoder Nodes
 
-![Usage Example - TensorRT VAE Decoder](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
+![Usage Example - TensorRT VAE Encoder & Decoder Nodes](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
 
 ### TensorRT VAE Engine Builder Node
 
