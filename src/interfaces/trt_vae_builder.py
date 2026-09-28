@@ -27,6 +27,44 @@ from ..utils.constants import get_base_cache_dir
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = ROOT / "tensorrt_backend" / "artifacts"
 
+def _release_comfy_vram(stage: str) -> None:
+    """Release ComfyUI-held VRAM before spawning GPU-heavy build subprocesses.
+
+    The export/build subprocesses need nearly all of the GPU, but the running
+    ComfyUI process keeps its models cached in VRAM. Unload them (they reload on
+    demand) so large engines build without tipping into shared-memory OOM.
+    """
+    try:
+        import comfy.model_management as mm
+        try:
+            mm.unload_all_models()
+        except Exception as exc:
+            print(f"[SeedVR2] unload_all_models failed: {exc}", flush=True)
+        soft = getattr(mm, "soft_empty_cache", None)
+        if callable(soft):
+            try:
+                soft(force=True)
+            except TypeError:
+                soft()
+    except Exception as exc:
+        print(f"[SeedVR2] ComfyUI model management unavailable ({exc}); continuing", flush=True)
+    try:
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            free_b, total_b = torch.cuda.mem_get_info()
+            torch.cuda.empty_cache()
+            free_b2, _ = torch.cuda.mem_get_info()
+            print(
+                f"[SeedVR2] VRAM before {stage}: "
+                f"{free_b / 2**30:.2f} -> {free_b2 / 2**30:.2f} GiB free / {total_b / 2**30:.2f} GiB total",
+                flush=True,
+            )
+    except Exception:
+        pass
+
+
 
 class SeedVR2BuildTensorRTVAE(io.ComfyNode):
     """Build dedicated TensorRT VAE engines for a chosen frame count and tile size."""
@@ -145,6 +183,7 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                 t0 = time.perf_counter()
                 print(f"[SeedVR2] Building {frames}f {kind} (tile {tile})...", flush=True)
 
+                _release_comfy_vram(f"{kind} ONNX export")
                 # 1) ONNX export (GPU trace)
                 r1 = subprocess.run(
                     [python, str(worker), "--repo", str(ROOT), "--kind", kind,
@@ -159,6 +198,7 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                     raise RuntimeError(f"ONNX export failed for {kind}:\n{tail1}\n{err1}")
                 print(f"  [worker] {tail1}", flush=True)
 
+                _release_comfy_vram(f"{kind} TRT build")
                 # 2) TRT build
                 build_cmd = [python, str(builder), str(onnx_path), "--output", str(eng_path),
                              "--workspace-gb", str(workspace_gb)]
