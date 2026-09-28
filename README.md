@@ -42,8 +42,8 @@ Built engines land in `tensorrt_backend/artifacts/` and automatically populate t
 - **`model`**: Source PyTorch VAE model checkpoint (e.g. `ema_vae_fp16.safetensors`).
 - **`frames`**: Target frame count for the engine. Automatically normalized to the required **4n+1** sequence format (e.g. `5`, `21`, `29`, `61`, `89`, `101`, `185`, `205`).
 - **`tile_size`**: Spatial tile size (`256` or `512`):
-  - **`256`**: **Mandatory for Decoder engines (`kind: decoder`)**. The TensorRT VAE Decoder operates on 256x256 spatial patches. Also recommended for long frame sequences (60f–185f+) on 16GB–24GB VRAM GPUs.
-  - **`512`**: Intended for Encoder engines (`kind: encoder`) for larger spatial patch processing. Requires significantly higher compilation VRAM.
+  - **`256`**: Smaller spatial patches; lower compilation and runtime VRAM. Recommended for long frame sequences (60f–185f+) on 16GB–24GB VRAM GPUs.
+  - **`512`**: Larger spatial patches; requires significantly higher compilation VRAM. Supported for both Encoder and Decoder engines.
 - **`kind`**: Select which engine to build:
   - **`both`**: Builds both encoder and decoder engines.
   - **`decoder`**: Builds the VAE decoder engine only (recommended for Phase 3 acceleration).
