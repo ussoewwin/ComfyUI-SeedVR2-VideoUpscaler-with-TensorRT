@@ -1,8 +1,8 @@
 {
   "id": "e2c8e6ec-9e8a-4a81-a240-7e7d2befc2bf",
   "revision": 0,
-  "last_node_id": 236,
-  "last_link_id": 380,
+  "last_node_id": 241,
+  "last_link_id": 386,
   "nodes": [
     {
       "id": 59,
@@ -19,7 +19,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 5,
+      "order": 6,
       "mode": 0,
       "inputs": [
         {
@@ -151,7 +151,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 12,
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
@@ -195,7 +195,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 8,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -244,7 +244,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 14,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
@@ -317,7 +317,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 16,
+      "order": 18,
       "mode": 0,
       "inputs": [
         {
@@ -378,7 +378,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 17,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
@@ -436,7 +436,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 11,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -503,7 +503,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 10,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
@@ -628,7 +628,7 @@
         }
       },
       "widgets_values": {
-        "video": "mp4.mp4",
+        "video": "Rabbit_skiing_down_mountain_202606020940.mp4",
         "force_rate": 0,
         "custom_width": 0,
         "custom_height": 0,
@@ -640,7 +640,7 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "mp4.mp4",
+            "filename": "Rabbit_skiing_down_mountain_202606020940.mp4",
             "type": "input",
             "format": "video/mp4",
             "force_rate": 0,
@@ -653,7 +653,7 @@
         }
       },
       "widgets_values_named": {
-        "video": "mp4.mp4",
+        "video": "Rabbit_skiing_down_mountain_202606020940.mp4",
         "force_rate": 0,
         "custom_width": 0,
         "custom_height": 0,
@@ -666,7 +666,7 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "mp4.mp4",
+            "filename": "Rabbit_skiing_down_mountain_202606020940.mp4",
             "type": "input",
             "format": "video/mp4",
             "force_rate": 0,
@@ -694,7 +694,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 6,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
@@ -779,12 +779,12 @@
       ],
       "size": [
         294.390625,
-        502.3447265625
+        565.75
       ],
       "flags": {
         "pinned": true
       },
-      "order": 18,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
@@ -852,13 +852,13 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "125349_SeedVR_00001-audio.mp4",
-            "subfolder": "20260903",
+            "filename": "134507_SeedVR_00001-audio.mp4",
+            "subfolder": "20260928",
             "type": "output",
             "format": "video/nvenc_hevc-mp4",
             "frame_rate": 24,
-            "workflow": "125349_SeedVR_00001.png",
-            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20260903\\125349_SeedVR_00001-audio.mp4"
+            "workflow": "134507_SeedVR_00001.png",
+            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20260928\\134507_SeedVR_00001-audio.mp4"
           },
           "muted": false
         }
@@ -878,13 +878,13 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "125349_SeedVR_00001-audio.mp4",
-            "subfolder": "20260903",
+            "filename": "134507_SeedVR_00001-audio.mp4",
+            "subfolder": "20260928",
             "type": "output",
             "format": "video/nvenc_hevc-mp4",
             "frame_rate": 24,
-            "workflow": "125349_SeedVR_00001.png",
-            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20260903\\125349_SeedVR_00001-audio.mp4"
+            "workflow": "134507_SeedVR_00001.png",
+            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20260928\\134507_SeedVR_00001-audio.mp4"
           },
           "muted": false
         }
@@ -907,7 +907,7 @@
         "pinned": true
       },
       "order": 2,
-      "mode": 0,
+      "mode": 4,
       "inputs": [],
       "outputs": [
         {
@@ -960,8 +960,8 @@
       "flags": {
         "pinned": true
       },
-      "order": 7,
-      "mode": 0,
+      "order": 8,
+      "mode": 4,
       "inputs": [
         {
           "name": "torch_compile_args",
@@ -976,8 +976,8 @@
           "type": "SEEDVR2_VAE",
           "links": [
             366,
-            376,
-            377
+            377,
+            384
           ]
         }
       ],
@@ -995,7 +995,7 @@
         "ema_vae_fp16.safetensors",
         "cuda:0",
         true,
-        512,
+        1024,
         128,
         true,
         768,
@@ -1008,7 +1008,7 @@
         "model": "ema_vae_fp16.safetensors",
         "device": "cuda:0",
         "encode_tiled": true,
-        "encode_tile_size": 512,
+        "encode_tile_size": 1024,
         "encode_tile_overlap": 128,
         "decode_tiled": true,
         "decode_tile_size": 768,
@@ -1027,7 +1027,7 @@
       ],
       "size": [
         287.9,
-        154
+        178
       ],
       "flags": {
         "pinned": true
@@ -1096,18 +1096,12 @@
       "widgets_values": [
         "ema_vae_fp16.safetensors",
         "cuda:0",
-        "auto",
-        768,
-        128,
-        "25"
+        "45"
       ],
       "widgets_values_named": {
         "model": "ema_vae_fp16.safetensors",
         "device": "cuda:0",
-        "decode_tiled": "auto",
-        "decode_tile_size": 768,
-        "decode_tile_overlap": 128,
-        "engine_frames": "25"
+        "engine_frames": "45"
       }
     },
     {
@@ -1124,7 +1118,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 13,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
@@ -1141,7 +1135,7 @@
           "name": "vae_encode",
           "shape": 7,
           "type": "SEEDVR2_VAE",
-          "link": 376
+          "link": 386
         },
         {
           "name": "vae_decode",
@@ -1178,11 +1172,11 @@
         }
       },
       "widgets_values": [
-        3916025851,
+        624047958937928,
         "randomize",
         1080,
         0,
-        25,
+        45,
         false,
         "lab",
         3,
@@ -1193,11 +1187,11 @@
         false
       ],
       "widgets_values_named": {
-        "seed": 3916025851,
+        "seed": 624047958937928,
         "control_after_generate": "randomize",
         "resolution": 1080,
         "max_resolution": 0,
-        "batch_size": 25,
+        "batch_size": 45,
         "uniform_batch_size": false,
         "color_correction": "lab",
         "temporal_overlap": 3,
@@ -1222,7 +1216,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 15,
+      "order": 17,
       "mode": 4,
       "inputs": [
         {
@@ -1276,7 +1270,7 @@
         }
       },
       "widgets_values": [
-        1310080090,
+        618484189595805,
         "randomize",
         1080,
         0,
@@ -1291,7 +1285,7 @@
         false
       ],
       "widgets_values_named": {
-        "seed": 1310080090,
+        "seed": 618484189595805,
         "control_after_generate": "randomize",
         "resolution": 1080,
         "max_resolution": 0,
@@ -1310,8 +1304,8 @@
       "id": 236,
       "type": "ImpactSwitch",
       "pos": [
-        -1300.1727329048294,
-        -368.5700448920022
+        -738.1886604222022,
+        -67.61516103397673
       ],
       "size": [
         270,
@@ -1320,13 +1314,13 @@
       "flags": {
         "pinned": true
       },
-      "order": 9,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
           "name": "input1",
           "shape": 7,
-          "type": "SEEDVR2_VAE",
+          "type": "*",
           "link": 377
         },
         {
@@ -1343,8 +1337,8 @@
       "outputs": [
         {
           "label": "SEEDVR2_VAE",
-          "name": "SEEDVR2_VAE",
-          "type": "SEEDVR2_VAE",
+          "name": "selected_value",
+          "type": "*",
           "links": [
             379,
             380
@@ -1361,14 +1355,16 @@
           "links": null
         }
       ],
+      "title": "Switch (Decode)",
       "properties": {
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        },
         "cnr_id": "comfyui-impact-pack",
         "ver": "8.28.3",
-        "Node name for S&R": "ImpactSwitch"
+        "Node name for S&R": "ImpactSwitch",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
       },
       "widgets_values": [
         2,
@@ -1377,6 +1373,137 @@
       "widgets_values_named": {
         "select": 2,
         "sel_mode": false
+      }
+    },
+    {
+      "id": 241,
+      "type": "ImpactSwitch",
+      "pos": [
+        -1099.1251739823917,
+        -66.90882695203902
+      ],
+      "size": [
+        270,
+        202
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input1",
+          "shape": 7,
+          "type": "*",
+          "link": 384
+        },
+        {
+          "name": "input2",
+          "type": "SEEDVR2_VAE",
+          "link": 385
+        },
+        {
+          "name": "input3",
+          "type": "SEEDVR2_VAE",
+          "link": null
+        },
+        {
+          "name": "input4",
+          "type": "SEEDVR2_VAE",
+          "link": null
+        },
+        {
+          "name": "input5",
+          "type": "SEEDVR2_VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "SEEDVR2_VAE",
+          "name": "selected_value",
+          "type": "*",
+          "links": [
+            386
+          ]
+        },
+        {
+          "name": "selected_label",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "selected_index",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "title": "Switch (Encode)",
+      "properties": {
+        "cnr_id": "comfyui-impact-pack",
+        "ver": "8.28.3",
+        "Node name for S&R": "ImpactSwitch",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        2,
+        false
+      ],
+      "widgets_values_named": {
+        "select": 2,
+        "sel_mode": false
+      }
+    },
+    {
+      "id": 239,
+      "type": "SeedVR2LoadTensorRTVAEEncoder",
+      "pos": [
+        -1628.8017646550197,
+        -10.66069425443343
+      ],
+      "size": [
+        353.890625,
+        142
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SEEDVR2_VAE",
+          "type": "SEEDVR2_VAE",
+          "links": [
+            385
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder",
+        "ver": "d8d83f039c8b6ff53bafa791d974e717250253ce",
+        "Node name for S&R": "SeedVR2LoadTensorRTVAEEncoder",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "ema_vae_fp16.safetensors",
+        "cuda:0",
+        "45"
+      ],
+      "widgets_values_named": {
+        "model": "ema_vae_fp16.safetensors",
+        "device": "cuda:0",
+        "engine_frames": "45"
       }
     }
   ],
@@ -1558,14 +1685,6 @@
       "IMAGE"
     ],
     [
-      376,
-      221,
-      0,
-      229,
-      2,
-      "SEEDVR2_VAE"
-    ],
-    [
       377,
       221,
       0,
@@ -1595,6 +1714,30 @@
       0,
       230,
       3,
+      "SEEDVR2_VAE"
+    ],
+    [
+      384,
+      221,
+      0,
+      241,
+      0,
+      "SEEDVR2_VAE"
+    ],
+    [
+      385,
+      239,
+      0,
+      241,
+      1,
+      "SEEDVR2_VAE"
+    ],
+    [
+      386,
+      241,
+      0,
+      229,
+      2,
       "SEEDVR2_VAE"
     ]
   ],
@@ -1640,20 +1783,34 @@
       "flags": {
         "pinned": true
       }
+    },
+    {
+      "id": 4,
+      "title": "TensorRT VAE Encode",
+      "bounding": [
+        -1679.9005721315198,
+        -98.74844806436904,
+        449.4691168749748,
+        367.3395755803821
+      ],
+      "color": "#A88",
+      "flags": {
+        "pinned": true
+      }
     }
   ],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.3558410273837148,
+      "scale": 0.32349184307610773,
       "offset": [
-        2612.6811855002584,
-        1343.7192950046187
+        3090.368931740958,
+        1319.376937118509
       ]
     },
     "ue_links": [],
     "links_added_by_ue": [],
-    "frontendVersion": "1.49.6",
+    "frontendVersion": "1.52.7",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
