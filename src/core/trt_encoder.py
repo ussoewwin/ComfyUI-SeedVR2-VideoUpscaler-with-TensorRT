@@ -119,14 +119,14 @@ def _positions(length: int, tile: int, overlap: int) -> list[int]:
 
 
 def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.device) -> torch.Tensor:
+    """Cross-fade overlapping latent tiles instead of introducing hard averaging edges."""
     weight = torch.ones(length, device=device, dtype=torch.float32)
-    if overlap:
-        t = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
-        ramp = (1.0 - torch.cos(t * 3.141592653589793)) / 2.0  # cosine ease
-        if left:
-            weight[:overlap] = ramp
-        if right:
-            weight[-overlap:] = torch.minimum(weight[-overlap:], torch.flip(ramp, dims=[0]))
+    if left and overlap:
+        weight[:overlap] = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
+    if right and overlap:
+        weight[-overlap:] = torch.minimum(
+            weight[-overlap:], torch.linspace(1.0, 0.0, overlap + 1, device=device)[1:]
+        )
     return weight
 
 
@@ -149,7 +149,7 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
         torch.cuda.synchronize()
 
     source = sample.to(device="cuda", dtype=torch.float16).contiguous()
-    tile, overlap = tile_px, tile_px * 3 // 8  # 37.5% tile-to-tile overlap (96px@256, 192px@512)
+    tile, overlap = tile_px, 96  # 96px fixed tile-to-tile overlap (12 latent px), Studio reference value
     ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
     padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
     source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
