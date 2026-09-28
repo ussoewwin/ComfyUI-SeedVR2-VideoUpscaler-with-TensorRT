@@ -42,3 +42,5 @@ tmp/
 benchmark/seedvr2_out/
 benchmark/*.log
 benchmark/seeds_*.txt
+*.log
+update_release.bat

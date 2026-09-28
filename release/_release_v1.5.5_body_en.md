@@ -1,10 +1,3 @@
-<table align="center">
-  <tr>
-    <td align="center" bgcolor="#3478ca" width="88" height="36"><font color="#ffffff"><b>EN</b></font></td>
-    <td align="center" bgcolor="#e5e7eb" width="88" height="36"><a href="https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/blob/main/zhmd/v1.5.5.md"><font color="#4b5563"><b>中文</b></font></a></td>
-  </tr>
-</table>
-
 # SeedVR2 Video Upscaler — Technical Guide: Three Core Improvements and Encoder Refactoring
 
 
