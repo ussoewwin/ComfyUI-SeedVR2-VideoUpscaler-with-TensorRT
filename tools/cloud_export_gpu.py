@@ -3,28 +3,23 @@
 Traces a static ONNX graph for the TensorRT VAE engines.
 
 OOM strategy (--device auto, default):
-    1) legacy exporter (torch.jit tracer) on GPU, no Conv3d chunking - the
-       reference graph used by all existing engines.  NOTE: the legacy tracer
-       keeps every intermediate activation alive, so 85f x 512 needs ~33GB and
-       does not fit in a 31GB card;
-    2) on CUDA OOM: automatically re-runs itself in a FRESH PROCESS with
-       --export-mode dynamo (torch.export based exporter).  Fake-tensor tracing
-       needs almost no GPU memory, so large 512-tile graphs can be exported on
-       a 5090;
-    3) last resort: CPU float16 trace (system RAM, CUDA hidden).  This is
-       extremely slow for large 512-tile graphs (hours) - avoid if possible.
+    1) GPU trace with the default PyTorch allocator (reference graph);
+    2) on CUDA OOM: re-run in a FRESH PROCESS with --allocator managed.  That
+       swaps PyTorch's CUDA allocator for one backed by cudaMallocManaged (UVM),
+       so VRAM overflows are paged into system RAM - a 31GB RTX 5090 with plenty
+       of host RAM can then trace graphs whose working set exceeds VRAM.  The
+       graph stays the SAME legacy (reference) graph;
+    3) last resort: CPU float16 trace (system RAM, CUDA hidden).  Very slow.
 
-Use --export-mode to force a specific exporter, --gpu-conv-limit-gb to set a
-Conv3d chunk size for the GPU path, and --device cuda / --device cpu to force
-a specific device.
-
-The produced ONNX is GPU-independent. Build the engine with cloud_build_engine.py
-on any Blackwell (sm_120) GPU, or locally on the RTX 5060 Ti.
+--export-mode dynamo is available but NOT used automatically: the torch.export
+based exporter decomposes ops differently from the reference exporter, so its
+graphs are not guaranteed to match the reference engines.
 
 Usage:
     python tools/cloud_export_gpu.py --repo <custom_node_root> \
         --kind encoder --frames 85 --output <onnx_path> [--model ema_vae_fp16.safetensors] \
-        [--tile 512] [--device auto|cuda|cpu] [--export-mode legacy|dynamo]
+        [--tile 512] [--device auto|cuda|cpu] [--allocator default|managed] \
+        [--export-mode legacy|dynamo]
 """
 
 from __future__ import annotations
@@ -43,6 +38,124 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "garbage_collection_threshold:0
 
 import torch
 import yaml
+
+_MANAGED_ALLOC_SRC = r"""
+#include <cuda_runtime.h>
+#include <cstddef>
+
+extern "C" void* seedvr2_managed_malloc(std::size_t size, int device, cudaStream_t stream) {
+    (void)device; (void)stream;
+    void* p = nullptr;
+    if (cudaMallocManaged(&p, size) != cudaSuccess) {
+        return nullptr;
+    }
+    return p;
+}
+
+extern "C" void seedvr2_managed_free(void* ptr, std::size_t size, int device, cudaStream_t stream) {
+    (void)size; (void)device; (void)stream;
+    if (ptr != nullptr) {
+        cudaFree(ptr);
+    }
+}
+"""
+
+
+def _install_managed_allocator() -> bool:
+    """Swap PyTorch's CUDA allocator for one backed by cudaMallocManaged (UVM).
+
+    VRAM overflows are then paged into system RAM, so a trace whose working set
+    exceeds the card's VRAM still completes (this is the code path that "fully
+    uses" an RTX 5090 together with a large amount of host RAM).  cudaMallocManaged
+    is a CUDA *runtime* call, so a plain C++ compiler suffices (no nvcc needed).
+    """
+    import ctypes
+
+    so_path: str | None = None
+
+    # 1) Let torch build the tiny shared library (it knows the CUDA include/lib paths).
+    try:
+        from torch.utils.cpp_extension import load_inline
+
+        mod = load_inline(
+            name="seedvr2_managed_alloc",
+            cpp_sources=_MANAGED_ALLOC_SRC,
+            with_cuda=True,
+            verbose=False,
+            extra_cflags=["-O1"],
+        )
+        so_path = str(Path(mod.__file__))
+    except Exception as exc:
+        print(f"[MEM] cpp_extension build failed ({exc}); trying direct gcc...", flush=True)
+
+    # 2) Fallback: compile with gcc against discovered CUDA runtime headers/libs.
+    if so_path is None:
+        try:
+            import glob as _glob
+            import site as _site
+            import subprocess as _sp
+            import tempfile
+
+            search_roots: list[Path] = []
+            try:
+                for sp in _site.getsitepackages():
+                    search_roots.append(Path(sp))
+            except Exception:
+                pass
+            try:
+                search_roots.append(Path(_site.getusersitepackages()))
+            except Exception:
+                pass
+            search_roots.append(Path(torch.__file__).resolve().parent.parent)
+
+            include_dirs: list[str] = []
+            lib_dirs: list[str] = []
+            for root in search_roots:
+                include_dirs += _glob.glob(str(root / "nvidia" / "*" / "include"))
+                lib_dirs += _glob.glob(str(root / "nvidia" / "*" / "lib"))
+            cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
+            if cuda_home:
+                include_dirs.append(str(Path(cuda_home) / "include"))
+                lib_dirs.append(str(Path(cuda_home) / "lib64"))
+
+            src_file = Path(tempfile.mkdtemp()) / "seedvr2_managed_alloc.cpp"
+            src_file.write_text(_MANAGED_ALLOC_SRC, encoding="utf-8")
+            out_so = src_file.with_suffix(".so")
+            cmd = ["gcc", "-shared", "-fPIC", "-O1", "-o", str(out_so), str(src_file)]
+            for d in include_dirs:
+                cmd += ["-I", d]
+            for d in lib_dirs:
+                cmd += ["-L", d]
+            cmd += ["-lcudart"]
+            r = _sp.run(cmd, capture_output=True, text=True)
+            if r.returncode == 0 and out_so.exists():
+                so_path = str(out_so)
+            else:
+                print(f"[MEM] gcc build failed: {(r.stderr or '').strip()[:400]}", flush=True)
+        except Exception as exc:
+            print(f"[MEM] direct gcc path failed: {exc}", flush=True)
+
+    if so_path is None:
+        return False
+
+    try:
+        lib = ctypes.CDLL(so_path)
+        lib.seedvr2_managed_malloc
+        lib.seedvr2_managed_free
+    except Exception as exc:
+        print(f"[MEM] allocator symbols not found in {so_path}: {exc}", flush=True)
+        return False
+
+    try:
+        from torch.cuda.memory import CUDAPluggableAllocator, change_current_allocator
+
+        alloc = CUDAPluggableAllocator(so_path, "seedvr2_managed_malloc", "seedvr2_managed_free")
+        change_current_allocator(alloc)
+        print(f"[MEM] managed-memory allocator ACTIVE ({so_path}) - VRAM overflow now spills into system RAM", flush=True)
+        return True
+    except Exception as exc:
+        print(f"[MEM] change_current_allocator failed: {exc}", flush=True)
+        return False
 
 
 def _find_vae_file(model_name: str, model_dir: Path) -> Path:
@@ -107,17 +220,22 @@ def main() -> int:
     parser.add_argument("--tile", type=int, default=256, choices=[256, 512],
                         help="spatial tile size for the ONNX (256 = 1/4 memory; engine tile must match)")
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
-                        help="auto = GPU first (fresh-process fallbacks), then CPU fp16 (system RAM); "
-                             "cuda = GPU only; cpu = CPU only (CUDA hidden)")
+                        help="auto = GPU first (managed-memory retry, then CPU), cuda = GPU only, cpu = CPU only")
+    parser.add_argument("--allocator", choices=["default", "managed"], default="default",
+                        help="managed = cudaMallocManaged allocator: VRAM overflows spill into system RAM "
+                             "(use with plenty of host RAM to trace graphs larger than VRAM)")
     parser.add_argument("--export-mode", choices=["legacy", "dynamo"], default="legacy",
-                        help="legacy = torch.jit tracer (reference graph; keeps all activations alive "
-                             "while tracing); dynamo = torch.export based exporter (fake tensors, "
-                             "almost no GPU memory)")
+                        help="legacy = torch.jit tracer (reference graph); dynamo = torch.export based "
+                             "(different op decomposition - not used automatically)")
     parser.add_argument("--gpu-conv-limit-gb", type=float, default=0.0,
                         help="Conv3d chunk size (GB) for the GPU trace (0 = no chunking)")
     parser.add_argument("--cpu-conv-limit-gb", type=float, default=16.0,
                         help="Conv3d chunk size (GB) for the CPU trace path only (default 16)")
     args = parser.parse_args()
+
+    if args.allocator == "managed":
+        if not _install_managed_allocator():
+            print("[MEM] WARNING: managed allocator unavailable; continuing with the default allocator.", flush=True)
 
     cuda_available = torch.cuda.is_available()
     if args.device == "cuda" and not cuda_available:
@@ -220,7 +338,8 @@ def main() -> int:
         lim = float(args.gpu_conv_limit_gb) if (args.gpu_conv_limit_gb and args.gpu_conv_limit_gb > 0) else float("inf")
         _apply_conv_limits(lim)
         txt = "no chunking" if lim == float("inf") else f"Conv3d chunk {lim:g} GB"
-        print(f"Exporting {frames}f {args.kind} ONNX on GPU ({args.export_mode} exporter; {txt})...", flush=True)
+        print(f"Exporting {frames}f {args.kind} ONNX on GPU ({args.export_mode} exporter; {txt}; "
+              f"allocator={args.allocator})...", flush=True)
         _free_cuda()
         with torch.inference_mode():
             _portable_export(mod, (dummy,), output, legacy=(args.export_mode == "legacy"))
@@ -245,30 +364,29 @@ def main() -> int:
             if args.device == "cuda" or not _is_oom(exc):
                 raise
             oom_hit = True
-        produce_note = ""
 
         if oom_hit:
             print("[GPU-offload] GPU trace hit CUDA OOM.", flush=True)
-            if args.export_mode != "dynamo":
-                # Re-run in a fresh process: the failed legacy trace keeps its activation
-                # tensors alive via the exception traceback / tracer state, so retrying in
-                # the same process would immediately fail again.
+            if args.allocator != "managed":
+                # Re-run in a fresh process with the managed-memory allocator: VRAM overflows
+                # are paged into system RAM, so a trace working set larger than VRAM can still
+                # complete while keeping the SAME legacy (reference) graph.
                 child_cmd = [
                     sys.executable, str(Path(__file__).resolve()),
                     "--repo", args.repo, "--kind", args.kind, "--frames", str(args.frames),
                     "--output", str(output), "--model", args.model, "--tile", str(args.tile),
-                    "--device", args.device, "--export-mode", "dynamo",
+                    "--device", args.device, "--allocator", "managed",
+                    "--export-mode", args.export_mode,
                     "--cpu-conv-limit-gb", str(args.cpu_conv_limit_gb),
                 ]
                 if args.model_dir:
                     child_cmd += ["--model-dir", args.model_dir]
                 if args.gpu_conv_limit_gb and args.gpu_conv_limit_gb > 0:
                     child_cmd += ["--gpu-conv-limit-gb", str(args.gpu_conv_limit_gb)]
-                print("[GPU-offload] retrying in a fresh process with the dynamo (torch.export) exporter "
-                      "- fake-tensor tracing needs almost no GPU memory...", flush=True)
+                print("[GPU-offload] retrying in a fresh process with the managed (VRAM+system RAM) allocator...", flush=True)
                 res = subprocess.run(child_cmd)
                 return res.returncode
-            print("[CPU-offload] all GPU attempts failed; switching to CPU fp16 (system RAM).", flush=True)
+            print("[CPU-offload] GPU trace still OOM with the managed allocator; falling back to CPU fp16.", flush=True)
             try:
                 vae.to("cpu")
             except Exception:
