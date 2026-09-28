@@ -43,6 +43,11 @@ def main() -> int:
     props = torch.cuda.get_device_properties(0)
     print(f"GPU: {torch.cuda.get_device_name(0)}", flush=True)
     print(f"VRAM: {props.total_memory / 2**30:.1f} GiB, arch: {props.major}.{props.minor}", flush=True)
+    try:
+        free_b, _total_b = torch.cuda.mem_get_info()
+        print(f"Free VRAM at build start: {free_b / 2**30:.2f} GiB", flush=True)
+    except Exception:
+        pass
     print(f"TensorRT-RTX: {trt.__version__}", flush=True)
 
     logger = trt.Logger(trt.Logger.WARNING)
@@ -56,39 +61,55 @@ def main() -> int:
 
     config = builder.create_builder_config()
 
-    def _build(ws_gb: float):
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, int(ws_gb * (1 << 30)))
-        return builder.build_serialized_network(network, config)
+    def _try_build(ws_gb: float):
+        try:
+            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, int(ws_gb * (1 << 30)))
+            return builder.build_serialized_network(network, config)
+        except Exception as exc:
+            print(f"WARNING: build raised an exception at {ws_gb:g} GB: {exc}", flush=True)
+            return None
 
     t0 = time.perf_counter()
+    blob = None
     if args.min_ws:
-        # Binary search for the smallest workspace that still builds.
         lo, hi = 2.0, args.workspace_gb
-        blob = _build(hi)
+        blob = _try_build(hi)
         if blob is None:
             while blob is None and hi <= 48:
                 hi += 2.0
-                blob = _build(hi)
+                blob = _try_build(hi)
         if blob is None:
-            print("ERROR: engine build failed even at high workspace", flush=True)
+            print("ERROR: engine build failed even at high allocation", flush=True)
             return 1
         while hi - lo > 0.5:
             mid = (lo + hi) / 2
-            b = _build(mid)
+            b = _try_build(mid)
             if b is not None:
                 blob = b
                 hi = mid
             else:
                 lo = mid
-        ws_used = hi
-        print(f"Min workspace: {ws_used:.1f} GB (smallest that builds)", flush=True)
+        print(f"Min allocation: {hi:.1f} GB (smallest that builds)", flush=True)
     else:
-        blob = _build(args.workspace_gb)
-        ws_used = args.workspace_gb
+        blob = _try_build(args.workspace_gb)
+        if blob is None:
+            # A build can OOM when the configured allocation (+ ~0.19 GB overhead) does not fit
+            # in the currently free VRAM (typical on 16GB cards while other apps hold VRAM).
+            # Retry with progressively smaller allocations: a smaller pool still builds, using
+            # lower-memory tactics.
+            for ws_try in (8.0, 6.0, 4.0, 3.0, 2.0, 1.5, 1.0):
+                if ws_try >= args.workspace_gb:
+                    continue
+                print(f"WARNING: build failed at {args.workspace_gb:g} GB; retrying with {ws_try:g} GB...", flush=True)
+                blob = _try_build(ws_try)
+                if blob is not None:
+                    print(f"NOTE: engine built with reduced allocation {ws_try:g} GB.", flush=True)
+                    break
+                print(f"WARNING: build failed at {ws_try:g} GB as well.", flush=True)
     dt = time.perf_counter() - t0
 
     if blob is None:
-        print("ERROR: engine build failed (workspace too small or graph unsupported)", flush=True)
+        print("ERROR: engine build failed (allocation too large for the free VRAM, or graph unsupported)", flush=True)
         return 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
