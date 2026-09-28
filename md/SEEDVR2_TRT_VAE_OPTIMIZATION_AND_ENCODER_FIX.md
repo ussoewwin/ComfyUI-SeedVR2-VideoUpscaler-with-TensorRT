@@ -945,6 +945,6 @@ __all__ = ["comfy_entrypoint", "SeedVR2Extension"]
 
 ### Sync & Remote Status
 - **Technical Document Location**: [`md/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md`](file:///d:/USERFILES/GitHub/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/md/SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md)
-- **Commit**: [`78769b8`](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/commit/78769b8) `docs: add technical documentation on TRT VAE improvements and encoder refactoring`
+- **Commit**: [`3255961`](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder/commit/3255961) `docs: rewrite TRT VAE optimization technical guide in standard English`
 - **Remote Synchronization**: Fully pushed to `origin/main`. Working tree clean.
 - **Live Custom Node Directory**: Synchronized byte-for-byte to `D:\USERFILES\ComfyUI\ComfyUI\custom_nodes\ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT-Decoder\md\SEEDVR2_TRT_VAE_OPTIMIZATION_AND_ENCODER_FIX.md`.
