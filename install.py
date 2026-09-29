@@ -110,15 +110,6 @@ def sync_or_build_engines() -> None:
                 print(f"[SeedVR2] Engines can be built on demand in ComfyUI using the 'SeedVR2 Build TensorRT VAE Engines' node.")
 
 
-def download_default_models() -> None:
-    download_script = ROOT / "scripts" / "download_models.py"
-    if download_script.exists():
-        try:
-            subprocess.check_call([sys.executable, str(download_script)])
-        except Exception as exc:
-            print(f"[SeedVR2] Warning: model pre-download failed: {exc} (will download on first run)")
-
-
 def main() -> int:
     print("=" * 80)
     print("SeedVR2 Video Upscaler — ComfyUI TensorRT Auto-Installer")
@@ -142,8 +133,8 @@ def main() -> int:
     # 3. TensorRT RTX VAE Engines
     sync_or_build_engines()
 
-    # 4. Default models
-    download_default_models()
+    # 4. Default models: intentionally NOT pre-downloaded.
+    #    Downloads happen only when a model is selected in a loader node and is missing.
 
     # 5. Verify
     verify_script = ROOT / "scripts" / "verify_install.py"

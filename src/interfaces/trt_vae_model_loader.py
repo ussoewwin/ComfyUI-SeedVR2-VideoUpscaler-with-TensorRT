@@ -216,7 +216,8 @@ def ensure_trt_engine_for_frames(frames: int, vae: torch.nn.Module | None = None
         model_dir.mkdir(parents=True, exist_ok=True)
         if not (model_dir / model).exists():
             print(f"[SeedVR2 TensorRT] Downloading {model} to {model_dir}...")
-            download_weight(DEFAULT_DIT, model, str(model_dir))
+            # Download only the model selected in the loader (never the default DiT).
+            download_weight(vae_model=model, model_dir=str(model_dir))
 
         debug = Debug(enabled=True)
         ctx = setup_generation_context(dit_device="cuda", vae_device="cuda", debug=debug)

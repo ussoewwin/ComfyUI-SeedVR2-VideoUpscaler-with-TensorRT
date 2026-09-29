@@ -132,12 +132,6 @@ try {
     & $TargetPython -c "import sys, torch; sys.path.insert(0, '.'); from src.optimization.compatibility import SAGE_ATTN_2_AVAILABLE, FLASH_ATTN_2_AVAILABLE; print('SageAttention 2:', 'ready' if SAGE_ATTN_2_AVAILABLE else 'not available (using SDPA)'); print('FlashAttention 2:', 'ready' if FLASH_ATTN_2_AVAILABLE else 'not available (using SDPA)')"
     if ($LASTEXITCODE -ne 0) { Write-Warning 'Attention kernel verification reported a warning.' }
 
-    if (-not $SkipModels) {
-        Write-Step 'Ensuring default SeedVR2 3B FP8 model and VAE'
-        & $TargetPython (Join-Path $PSScriptRoot 'download_models.py')
-        if ($LASTEXITCODE -ne 0) { Write-Warning 'Model download can be resumed when executing the node.' }
-    }
-
     if (-not $SkipTensorRT) {
         Write-Step 'Building TensorRT RTX VAE engines'
         & $TargetPython (Join-Path $PSScriptRoot 'prepare_tensorrt.py')

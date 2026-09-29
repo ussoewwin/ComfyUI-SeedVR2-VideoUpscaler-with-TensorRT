@@ -163,14 +163,18 @@ def download_with_resume(url: str, filepath: str, debug=None) -> bool:
         return False
 
 
-def download_weight(dit_model: str, vae_model: str, model_dir: Optional[str] = None, debug=None) -> bool:
-    """Download SeedVR2 DiT and VAE models with integrity checking"""
+def download_weight(dit_model: Optional[str] = None, vae_model: Optional[str] = None, model_dir: Optional[str] = None, debug=None) -> bool:
+    """Download SeedVR2 DiT and/or VAE models with integrity checking.
+
+    Only the names explicitly passed are processed (None = skip that slot).
+    """
     cache_dir = model_dir or get_base_cache_dir()
     os.makedirs(cache_dir, exist_ok=True)
     
     files_to_download = [
-        (dit_model, MODEL_REGISTRY.get(dit_model)),
-        (vae_model, MODEL_REGISTRY.get(vae_model))
+        (name, MODEL_REGISTRY.get(name))
+        for name in (dit_model, vae_model)
+        if name
     ]
     
     for filename, model_info in files_to_download:
