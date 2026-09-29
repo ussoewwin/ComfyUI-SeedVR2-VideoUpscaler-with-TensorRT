@@ -68,7 +68,7 @@
 
 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 
-本 Fork 技术指南（中文）：
+### 本 Fork 技术指南（中文）
 
 - [3B INT8 / NVFP4 模型支持](SEEDVR2_3B_INT8_NVFP4_REGISTRY_GUIDE.md)
 - [INT8 原生推理](SEEDVR2_INT8_NATIVE_OPS_GUIDE.md)
@@ -87,6 +87,12 @@ https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 
 特别感谢社区贡献者 [naxci1](https://github.com/naxci1)、[thehhmdb](https://github.com/thehhmdb)、[s-cerevisiae](https://github.com/s-cerevisiae)、[benjaminherb](https://github.com/benjaminherb)、[cmeka](https://github.com/cmeka)、[FurkanGozukara](https://github.com/FurkanGozukara)、[JohnAlcatraz](https://github.com/JohnAlcatraz)、[lihaoyun6](https://github.com/lihaoyun6)、[Luchuanzhao](https://github.com/Luchuanzhao)、[Luke2642](https://github.com/Luke2642)、[proxyid](https://github.com/proxyid)、[q5sys](https://github.com/q5sys) 以及许多其他人，在官方仓库（[https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)）中的改进、错误修复与测试。
 
+### TensorRT VAE 后端
+
+本仓库中的 TensorRT VAE 编码/解码引擎受到 [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio)（Apache 2.0）的启发。我曾考虑将 DiT 移植到 TensorRT，但由于困难重重而放弃，转而通过创建支持 ConvRot INT8/NVFP4 量化模型的 ComfyUI 节点来提升性能。不过，将 VAE 编码/解码移植到 TensorRT 的构想正是来自该项目——没有这项工作，这一方案根本不会诞生。向原作者致以诚挚的敬意与感谢。
+
 ## 📜 许可证
 
 本仓库中的代码按 Apache 2.0 许可证发布，详见 [LICENSE](../LICENSE) 文件。
+
+TensorRT VAE 后端受 [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio) 启发，该后端同样采用 Apache 2.0 许可证发布。依照 Apache 2.0 的要求，保留相应的署名与版权声明。
