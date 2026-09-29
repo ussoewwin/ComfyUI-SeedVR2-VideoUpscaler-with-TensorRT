@@ -235,7 +235,9 @@ def download_weight(dit_model: str, vae_model: str, model_dir: Optional[str] = N
                     save_validation_cache(cache, cache_dir)
         
         # Download file
-        url = HUGGINGFACE_BASE_URL.format(repo=repo, filename=filename)
+        # Resolve optional subfolder inside the repo (e.g. diffusion_models/)
+        remote_name = f"{model_info.subdir}/{filename}" if model_info.subdir else filename
+        url = HUGGINGFACE_BASE_URL.format(repo=repo, filename=remote_name)
         temp_file = f"{filepath}.download"
         
         if os.path.exists(temp_file) and debug:
@@ -276,7 +278,7 @@ def download_weight(dit_model: str, vae_model: str, model_dir: Optional[str] = N
             if debug:
                 debug.log(f"Failed to download {filename} after {DOWNLOAD_MAX_RETRIES} attempts", 
                          level="ERROR", category="download", force=True)
-                debug.log(f"Manual download: https://huggingface.co/{repo}/blob/main/{filename}", 
+                debug.log(f"Manual download: https://huggingface.co/{repo}/blob/main/{remote_name}", 
                          category="info", force=True)
                 debug.log(f"Save to: {filepath}", category="info", force=True)
             return False
