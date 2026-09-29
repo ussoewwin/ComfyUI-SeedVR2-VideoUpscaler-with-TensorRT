@@ -56,9 +56,17 @@ _ENGINES: dict[str, tuple[object, object, object, str, str, torch.cuda.Stream]] 
 _ENCODE_LOCK = Lock()
 
 
-def find_engine_path(frames: int) -> tuple[Path | None, int]:
-    """Return (engine_path, tile_px). Prefers the 512px-tile engine (Studio standard), then 256px."""
-    for tile_px in (512, 256):
+def find_engine_path(frames: int, tile_pref: str = "auto") -> tuple[Path | None, int]:
+    """Return (engine_path, tile_px).
+
+    tile_pref="auto": prefers the 512px-tile engine (Studio standard), then 256px.
+    tile_pref="256"/"512": only that exact tile engine is accepted.
+    """
+    if tile_pref in ("256", "512"):
+        tiles = (int(tile_pref),)
+    else:
+        tiles = (512, 256)
+    for tile_px in tiles:
         name = f"vae_encoder_{frames}f_tile{tile_px}.rtxplan"
         for d in ARTIFACTS_DIRS:
             p = d / name
@@ -74,18 +82,18 @@ def is_available(frames: int | None = None) -> bool:
     return True
 
 
-def _engine(frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None):
-    cache_key = frames
+def _engine(frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None, tile_pref: str = "auto"):
+    cache_key = (frames, tile_pref)
     cached = _ENGINES.get(cache_key)
     if cached is not None:
         return cached
 
-    path, tile_px = find_engine_path(frames)
+    path, tile_px = find_engine_path(frames, tile_pref)
     if path is None:
         # No auto-build: engines are created explicitly via the build scripts/node.
         # Without an engine we fall back to the standard PyTorch VAE.
         raise FileNotFoundError(
-            f"TensorRT VAE encoder engine for {frames} frames not found. "
+            f"TensorRT VAE encoder engine for {frames} frames (tile {tile_pref}) not found. "
             f"Build it first with tools/cloud_export_gpu.py + tools/cloud_build_engine.py "
             f"or the SeedVR2 Build TensorRT VAE Engines node."
         )
@@ -131,10 +139,10 @@ def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.d
 
 
 @torch.inference_mode()
-def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None) -> torch.Tensor:
+def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None, tile_pref: str = "auto") -> torch.Tensor:
     """Encode a single full batch directly in 1 shot with TensorRT."""
     _, _, _, height, width = sample.shape
-    _, _, context, input_name, output_name, stream, tile_px = _engine(int(frames), vae=vae, dit_model=dit_model)
+    _, _, context, input_name, output_name, stream, tile_px = _engine(int(frames), vae=vae, dit_model=dit_model, tile_pref=tile_pref)
     if context is None:
         raise RuntimeError("TensorRT could not create a per-batch encoder context")
 
@@ -214,15 +222,22 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
 _ENGINE_FILE_RE = re.compile(r"^vae_encoder_(\d+)f_tile\d+\.rtxplan$")
 
 
-def _available_engine_frames() -> list[int]:
-    """Return the sorted video-frame sizes of every usable encoder engine on disk."""
+def _available_engine_frames(tile_pref: str = "auto") -> list[int]:
+    """Return the sorted video-frame sizes of usable encoder engines on disk.
+
+    tile_pref="256"/"512" restricts the scan to that spatial tile size.
+    """
     found: set[int] = set()
+    if tile_pref in ("256", "512"):
+        engine_re = re.compile(rf"^vae_encoder_(\d+)f_tile{int(tile_pref)}\.rtxplan$")
+    else:
+        engine_re = _ENGINE_FILE_RE
     for d in ARTIFACTS_DIRS:
         try:
             if not d.is_dir():
                 continue
             for p in d.iterdir():
-                m = _ENGINE_FILE_RE.match(p.name)
+                m = engine_re.match(p.name)
                 if m and p.is_file():
                     try:
                         if p.stat().st_size > 1_000_000:
@@ -234,9 +249,10 @@ def _available_engine_frames() -> list[int]:
     return sorted(found)
 
 
-def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None:
+def pick_engine_frames(video_frames: int, preferred: str = "auto", tile_pref: str = "auto") -> int | None:
     """Pick the encoder engine frame size for a video of `video_frames` frames.
 
+    tile_pref="256"/"512" restricts the engine scan to that spatial tile size.
     Selection order:
     1. preferred (from the loader dropdown / settings node) if that engine exists;
     2. an engine matching video_frames exactly (1-shot encode);
@@ -244,7 +260,7 @@ def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None
     4. if every engine is larger than the clip, the smallest engine (encode pads/crops);
     5. None only when no engine exists at all.
     """
-    engines = _available_engine_frames()
+    engines = _available_engine_frames(tile_pref)
     if not engines:
         return None
     if preferred != "auto":
@@ -263,7 +279,7 @@ def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None
 
 
 @torch.inference_mode()
-def _encode_chunked(sample: torch.Tensor, total_frames: int, engine_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None) -> torch.Tensor:
+def _encode_chunked(sample: torch.Tensor, total_frames: int, engine_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None, tile_pref: str = "auto") -> torch.Tensor:
     """Encode a long clip by splitting it into engine_frames chunks with 4-frame temporal overlap."""
     _, _, _, height, width = sample.shape
     lat_total = (total_frames - 1) // 4 + 1
@@ -276,7 +292,7 @@ def _encode_chunked(sample: torch.Tensor, total_frames: int, engine_frames: int,
         starts.append(total_frames - engine_frames)
     for start in starts:
         chunk = sample[:, :, start:start + engine_frames]
-        lat = _encode_single_chunk(chunk, engine_frames, vae=vae, dit_model=dit_model)
+        lat = _encode_single_chunk(chunk, engine_frames, vae=vae, dit_model=dit_model, tile_pref=tile_pref)
         lat_start = start // 4
         result[:, :, lat_start:lat_start + lat_engine] = lat
         del chunk, lat
@@ -288,7 +304,7 @@ def _encode_chunked(sample: torch.Tensor, total_frames: int, engine_frames: int,
 
 
 @torch.inference_mode()
-def encode(sample: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: str | None = None, engine_frames: str = "auto") -> torch.Tensor:
+def encode(sample: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: str | None = None, engine_frames: str = "auto", engine_tile: str = "auto") -> torch.Tensor:
     """
     Encode [B,3,T,H,W] to posterior mean [B,16,(T-1)/4+1,H/8,W/8] in 1 shot using TensorRT engine.
     """
@@ -310,7 +326,7 @@ def encode(sample: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: 
         sample = torch.cat([sample, last_frame], dim=2)
         total_frames = req_frames
 
-    engine_video_frames = pick_engine_frames(total_frames, engine_frames)
+    engine_video_frames = pick_engine_frames(total_frames, engine_frames, engine_tile)
     if engine_video_frames is None:
         raise FileNotFoundError("No TensorRT VAE encoder engine found (need vae_encoder_{5,9,13,17,21,29}f_tile512.rtxplan)")
     if engine_video_frames > total_frames:
@@ -319,20 +335,20 @@ def encode(sample: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: 
         pad_len = engine_video_frames - total_frames
         last_frame = sample[:, :, -1:, :, :].repeat(1, 1, pad_len, 1, 1)
         padded = torch.cat([sample, last_frame], dim=2)
-        encoded = _encode_single_chunk(padded, engine_video_frames, vae=vae, dit_model=dit_model)
+        encoded = _encode_single_chunk(padded, engine_video_frames, vae=vae, dit_model=dit_model, tile_pref=engine_tile)
         lat_needed = (total_frames - 1) // 4 + 1
         return encoded[:, :, :lat_needed]
     if engine_video_frames == total_frames:
         print(f"[SeedVR2 TensorRT] Encoding {engine_video_frames}f in 1 shot with dedicated {engine_video_frames}f TensorRT engine...")
-        return _encode_single_chunk(sample, total_frames, vae=vae, dit_model=dit_model)
+        return _encode_single_chunk(sample, total_frames, vae=vae, dit_model=dit_model, tile_pref=engine_tile)
     n_chunks = (total_frames + engine_video_frames - 5) // (engine_video_frames - 4)
     print(f"[SeedVR2 TensorRT] Encoding {n_chunks} chunks of {engine_video_frames}f with TensorRT engine (4-frame temporal overlap)...")
-    return _encode_chunked(sample, total_frames, engine_video_frames, vae=vae, dit_model=dit_model)
+    return _encode_chunked(sample, total_frames, engine_video_frames, vae=vae, dit_model=dit_model, tile_pref=engine_tile)
 
 
-def resolve_engine_frames(preferred: str = "auto") -> int | None:
+def resolve_engine_frames(preferred: str = "auto", tile_pref: str = "auto") -> int | None:
     """Return the largest available encoder engine video-frame size (for chunking)."""
-    engines = _available_engine_frames()
+    engines = _available_engine_frames(tile_pref)
     if not engines:
         return None
     if preferred != "auto":

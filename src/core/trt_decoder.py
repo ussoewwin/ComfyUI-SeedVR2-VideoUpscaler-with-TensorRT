@@ -57,11 +57,21 @@ _DECODER_ENGINES: dict[str, tuple[object, object, object, str, str, torch.cuda.S
 _DECODE_LOCK = Lock()
 
 
-def find_engine_path(latent_frames: int) -> tuple[Path | None, int, int]:
-    # Studio standard: VAE decoder is standardized to 256px tile (32 lat px, overlap 12)
-    # for all batch sizes (5f, 9f, 13f, 17f, 21f). 512px tile is preserved as legacy fallback for 5f.
+def find_engine_path(latent_frames: int, tile_pref: str = "auto") -> tuple[Path | None, int, int]:
+    """Return (engine_path, tile, overlap).
+
+    tile_pref="auto": prefers the 256px tile (Studio standard: 32 lat px, overlap 12);
+    the 512px tile (64 lat px, overlap 24) is kept as legacy fallback.
+    tile_pref="256"/"512": only that exact tile engine is accepted.
+    """
     video_frames = (latent_frames - 1) * 4 + 1
-    for tile in (32, 64):
+    if tile_pref == "256":
+        tiles = (32,)
+    elif tile_pref == "512":
+        tiles = (64,)
+    else:
+        tiles = (32, 64)
+    for tile in tiles:
         overlap = 12 if tile == 32 else 24
         tile_px = tile * 8
         name = f"vae_decoder_tile_{tile_px}_{video_frames}f.rtxplan"
@@ -79,18 +89,18 @@ def is_available(latent_frames: int | None = None) -> bool:
     return True
 
 
-def _engine(latent_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None):
-    cache_key = latent_frames
+def _engine(latent_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None, tile_pref: str = "auto"):
+    cache_key = (latent_frames, tile_pref)
     cached = _DECODER_ENGINES.get(cache_key)
     if cached is not None:
         return cached
 
-    path, tile, overlap = find_engine_path(latent_frames)
+    path, tile, overlap = find_engine_path(latent_frames, tile_pref)
     if path is None:
         # No auto-build: engines are created explicitly via the build scripts/node.
         video_frames = (latent_frames - 1) * 4 + 1
         raise FileNotFoundError(
-            f"TensorRT VAE decoder engine for {video_frames} frames not found. "
+            f"TensorRT VAE decoder engine for {video_frames} frames (tile {tile_pref}) not found. "
             f"Build it first with tools/cloud_export_gpu.py + tools/cloud_build_engine.py "
             f"or the SeedVR2 Build TensorRT VAE Engines node."
         )
@@ -135,10 +145,10 @@ def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.d
 
 
 @torch.inference_mode()
-def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None) -> torch.Tensor:
+def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None, tile_pref: str = "auto") -> torch.Tensor:
     """Decode a single full batch directly in 1 shot with TensorRT."""
     _, _, _, height, width = latent.shape
-    _, _, context, input_name, output_name, stream, tile, overlap = _engine(int(latent_frames), vae=vae, dit_model=dit_model)
+    _, _, context, input_name, output_name, stream, tile, overlap = _engine(int(latent_frames), vae=vae, dit_model=dit_model, tile_pref=tile_pref)
     if context is None:
         raise RuntimeError("TensorRT could not create a per-batch decoder context")
 
@@ -216,15 +226,22 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
 _ENGINE_FILE_RE = re.compile(r"^vae_decoder_tile_\d+_(\d+)f\.rtxplan$")
 
 
-def _available_engine_frames() -> list[int]:
-    """Return the sorted video-frame sizes of every usable decoder engine on disk."""
+def _available_engine_frames(tile_pref: str = "auto") -> list[int]:
+    """Return the sorted video-frame sizes of usable decoder engines on disk.
+
+    tile_pref="256"/"512" restricts the scan to that spatial tile size.
+    """
     found: set[int] = set()
+    if tile_pref in ("256", "512"):
+        engine_re = re.compile(rf"^vae_decoder_tile_{int(tile_pref)}_(\d+)f\.rtxplan$")
+    else:
+        engine_re = _ENGINE_FILE_RE
     for d in ARTIFACTS_DIRS:
         try:
             if not d.is_dir():
                 continue
             for p in d.iterdir():
-                m = _ENGINE_FILE_RE.match(p.name)
+                m = engine_re.match(p.name)
                 if m and p.is_file():
                     try:
                         if p.stat().st_size > 1_000_000:
@@ -236,9 +253,10 @@ def _available_engine_frames() -> list[int]:
     return sorted(found)
 
 
-def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None:
+def pick_engine_frames(video_frames: int, preferred: str = "auto", tile_pref: str = "auto") -> int | None:
     """Pick the decoder engine frame size for a video of `video_frames` frames.
 
+    tile_pref="256"/"512" restricts the engine scan to that spatial tile size.
     Selection order:
     1. preferred (from the loader dropdown / settings node) if that engine exists;
     2. an engine matching video_frames exactly (1-shot decode);
@@ -246,7 +264,7 @@ def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None
     4. if every engine is larger than the clip, the smallest engine (decode pads/crops);
     5. None only when no engine exists at all (the sole legitimate fallback case).
     """
-    engines = _available_engine_frames()
+    engines = _available_engine_frames(tile_pref)
     if not engines:
         return None
     if preferred != "auto":
@@ -265,7 +283,7 @@ def pick_engine_frames(video_frames: int, preferred: str = "auto") -> int | None
 
 
 @torch.inference_mode()
-def _decode_chunked(latent: torch.Tensor, latent_frames: int, engine_video_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None) -> torch.Tensor:
+def _decode_chunked(latent: torch.Tensor, latent_frames: int, engine_video_frames: int, vae: torch.nn.Module | None = None, dit_model: str | None = None, tile_pref: str = "auto") -> torch.Tensor:
     """Decode a long latent by splitting it into engine-sized chunks with 1 latent-frame overlap."""
     engine_latent = (engine_video_frames - 1) // 4 + 1
     lat_stride = engine_latent - 1
@@ -278,7 +296,7 @@ def _decode_chunked(latent: torch.Tensor, latent_frames: int, engine_video_frame
         starts.append(latent_frames - engine_latent)
     for start in starts:
         chunk = latent[:, :, start:start + engine_latent]
-        sample = _decode_single_chunk(chunk, engine_latent, vae=vae, dit_model=dit_model)
+        sample = _decode_single_chunk(chunk, engine_latent, vae=vae, dit_model=dit_model, tile_pref=tile_pref)
         out_start = start * 4
         result[:, :, out_start:out_start + engine_video_frames] = sample
         del chunk, sample
@@ -290,7 +308,7 @@ def _decode_chunked(latent: torch.Tensor, latent_frames: int, engine_video_frame
 
 
 @torch.inference_mode()
-def decode(latent: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: str | None = None, engine_frames: str = "auto") -> torch.Tensor:
+def decode(latent: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: str | None = None, engine_frames: str = "auto", engine_tile: str = "auto") -> torch.Tensor:
     """
     Decode [B,16,T_lat,H,W] to video [B,3,(T_lat-1)*4+1,H*8,W*8] in 1 shot using TensorRT engine.
     """
@@ -299,7 +317,7 @@ def decode(latent: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: 
     _, _, latent_frames, _, _ = latent.shape
     video_frames = (latent_frames - 1) * 4 + 1
 
-    engine_video_frames = pick_engine_frames(video_frames, engine_frames)
+    engine_video_frames = pick_engine_frames(video_frames, engine_frames, engine_tile)
     if engine_video_frames is None:
         raise FileNotFoundError(
             "No TensorRT VAE decoder engine found. Build or download one first "
@@ -311,20 +329,20 @@ def decode(latent: torch.Tensor, vae: torch.nn.Module | None = None, dit_model: 
         engine_latent = (engine_video_frames - 1) // 4 + 1
         pad = engine_latent - latent_frames
         padded = torch.nn.functional.pad(latent, (0, 0, 0, 0, 0, pad))
-        sample = _decode_single_chunk(padded, engine_latent, vae=vae, dit_model=dit_model)
+        sample = _decode_single_chunk(padded, engine_latent, vae=vae, dit_model=dit_model, tile_pref=engine_tile)
         return sample[:, :, :video_frames]
     if engine_video_frames == video_frames:
         print(f"[SeedVR2 TensorRT] Decoding {engine_video_frames}f in 1 shot with dedicated {engine_video_frames}f TensorRT engine...")
-        return _decode_single_chunk(latent, latent_frames, vae=vae, dit_model=dit_model)
+        return _decode_single_chunk(latent, latent_frames, vae=vae, dit_model=dit_model, tile_pref=engine_tile)
     engine_latent = (engine_video_frames - 1) // 4 + 1
     n_chunks = (latent_frames + engine_latent - 2) // (engine_latent - 1)
     print(f"[SeedVR2 TensorRT] Decoding {n_chunks} chunks of {engine_video_frames}f with TensorRT engine...")
-    return _decode_chunked(latent, latent_frames, engine_video_frames, vae=vae, dit_model=dit_model)
+    return _decode_chunked(latent, latent_frames, engine_video_frames, vae=vae, dit_model=dit_model, tile_pref=engine_tile)
 
 
-def resolve_engine_frames(preferred: str = "auto") -> int | None:
+def resolve_engine_frames(preferred: str = "auto", tile_pref: str = "auto") -> int | None:
     """Return the largest available decoder engine video-frame size (for chunking)."""
-    engines = _available_engine_frames()
+    engines = _available_engine_frames(tile_pref)
     if not engines:
         return None
     if preferred != "auto":

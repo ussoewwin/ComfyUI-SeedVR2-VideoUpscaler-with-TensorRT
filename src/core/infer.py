@@ -40,7 +40,7 @@ from ..models.dit_3b import na
 _TRT_CROP_HW = [-1, -1]
 
 
-def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
+def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting, engine_tile_setting="auto"):
     """Encode a video batch with the TensorRT encoder, chunking to engine size.
 
     Engine selection is based on this batch's actual length (pick_engine_frames),
@@ -60,7 +60,7 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
     else:
         _TRT_CROP_HW[0], _TRT_CROP_HW[1] = -1, -1
 
-    engine_video_frames = pick_engine_frames(total, engine_frames_setting)
+    engine_video_frames = pick_engine_frames(total, engine_frames_setting, engine_tile_setting)
     if engine_video_frames is None:
         raise RuntimeError("No TensorRT VAE encoder engine available")
 
@@ -70,11 +70,11 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
         pad_len = engine_video_frames - total
         last_frame = enc_sample[:, :, -1:, :, :].repeat(1, 1, pad_len, 1, 1)
         padded = torch.cat([enc_sample, last_frame], dim=2)
-        lat = trt_encode(padded, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        lat = trt_encode(padded, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames), engine_tile=engine_tile_setting)
         return lat[:, :, :lat_needed]
 
     if total == engine_video_frames:
-        return trt_encode(enc_sample, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        return trt_encode(enc_sample, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames), engine_tile=engine_tile_setting)
 
     # Chunked encoding for batches longer than engine
     stride = ((engine_video_frames - 4) // 4) * 4
@@ -86,7 +86,7 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
         starts.append(total - engine_video_frames)
     for start in starts:
         chunk = enc_sample[:, :, start:start + engine_video_frames].contiguous()
-        lat = trt_encode(chunk, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        lat = trt_encode(chunk, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames), engine_tile=engine_tile_setting)
         lat_parts.append((lat, start // 4))
 
     lat0 = lat_parts[0][0]
@@ -99,7 +99,7 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting):
     return latent
 
 
-def _trt_decode_batch(dec_latent, vae, dit_model, engine_frames_setting):
+def _trt_decode_batch(dec_latent, vae, dit_model, engine_frames_setting, engine_tile_setting="auto"):
     """Decode a latent batch with the TensorRT decoder, chunking to engine size.
 
     Engine selection is based on this batch's actual length (pick_engine_frames),
@@ -124,7 +124,7 @@ def _trt_decode_batch(dec_latent, vae, dit_model, engine_frames_setting):
             _gl = float(_dl.abs().mean())
             _dbg_log(f"batch_in_T{latent_frames}: zeroRows={_zr[:30]} zeroCols={_zc[:30]} "
                      f"TL32absmean={_tl:.4f} global={_gl:.4f} ratio={_tl / max(_gl, 1e-9):.3f}")
-    engine_video_frames = pick_engine_frames(batch_video_frames, engine_frames_setting)
+    engine_video_frames = pick_engine_frames(batch_video_frames, engine_frames_setting, engine_tile_setting)
     if engine_video_frames is None:
         raise RuntimeError("No TensorRT VAE decoder engine available")
     engine_latent = (engine_video_frames - 1) // 4 + 1
@@ -132,10 +132,10 @@ def _trt_decode_batch(dec_latent, vae, dit_model, engine_frames_setting):
         # Batch is shorter than every engine: pad to engine size, 1-shot, crop.
         pad = engine_latent - latent_frames
         padded = torch.nn.functional.pad(dec_latent, (0, 0, 0, 0, 0, pad))
-        sample = trt_decode(padded, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        sample = trt_decode(padded, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames), engine_tile=engine_tile_setting)
         return sample[:, :, :batch_video_frames]
     if latent_frames == engine_latent:
-        return trt_decode(dec_latent, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        return trt_decode(dec_latent, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames), engine_tile=engine_tile_setting)
     lat_stride = engine_latent - 1
     parts = []
     starts = list(range(0, latent_frames - engine_latent + 1, lat_stride))
@@ -143,7 +143,7 @@ def _trt_decode_batch(dec_latent, vae, dit_model, engine_frames_setting):
         starts.append(latent_frames - engine_latent)
     for start in starts:
         chunk = dec_latent[:, :, start:start + engine_latent].contiguous()
-        sample = trt_decode(chunk, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames))
+        sample = trt_decode(chunk, vae=vae, dit_model=dit_model, engine_frames=str(engine_video_frames), engine_tile=engine_tile_setting)
         parts.append((sample, start * 4))
     out_frames = batch_video_frames
     s0 = parts[0][0]
@@ -300,7 +300,7 @@ class VideoDiffusionInfer():
                             "Use SeedVR2LoadVAEModel for fp16 encode."
                         )
                     self.debug.log(f"Encoding with TensorRT VAE Encoder (engine={getattr(self, 'use_tensorrt_engine_frames', 'auto')})", category="info", indent_level=1)
-                    latent = _trt_encode_batch(enc_sample, self.vae, self._resolve_dit_name(), getattr(self, 'use_tensorrt_engine_frames', 'auto'))
+                    latent = _trt_encode_batch(enc_sample, self.vae, self._resolve_dit_name(), getattr(self, 'use_tensorrt_engine_frames', 'auto'), getattr(self, 'use_tensorrt_engine_tile', 'auto'))
                     latent = latent.unsqueeze(2) if latent.ndim == 4 else latent
                     latent = optimized_channels_to_last(latent)
                     latent = (latent - shift) * scale
@@ -437,7 +437,7 @@ class VideoDiffusionInfer():
                             "Use SeedVR2LoadVAEModel for fp16 decode."
                         )
                     self.debug.log(f"Decoding with TensorRT VAE Decoder (engine={getattr(self, 'use_tensorrt_decode_engine_frames', 'auto')})", category="info", indent_level=1)
-                    sample = _trt_decode_batch(dec_latent, self.vae, self._resolve_dit_name(), getattr(self, 'use_tensorrt_decode_engine_frames', 'auto'))
+                    sample = _trt_decode_batch(dec_latent, self.vae, self._resolve_dit_name(), getattr(self, 'use_tensorrt_decode_engine_frames', 'auto'), getattr(self, 'use_tensorrt_decode_engine_tile', 'auto'))
                     if sample.ndim == 5 and sample.shape[0] == 1:
                         sample = sample.squeeze(0)
                     samples.append(sample)

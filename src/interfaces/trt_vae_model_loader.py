@@ -344,6 +344,13 @@ class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
                     tooltip="TensorRT encoder engine frame size. Auto-populated from artifacts. "
                             "auto = pick the largest available engine."
                 ),
+                io.Combo.Input("engine_tile",
+                    options=["auto", "256", "512"],
+                    default="auto",
+                    optional=True,
+                    tooltip="Encoder engine spatial tile size. auto = prefer 512px, then 256px. "
+                            "256/512 = use exactly that engine (e.g. vae_encoder_21f_tile256.rtxplan)."
+                ),
             ],
             outputs=[
                 io.Custom("SEEDVR2_VAE").Output(
@@ -354,7 +361,8 @@ class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
 
     @classmethod
     def execute(cls, model: str, device: str,
-                engine_frames: str = "auto") -> io.NodeOutput:
+                engine_frames: str = "auto",
+                engine_tile: str = "auto") -> io.NodeOutput:
         try:
             from comfy_execution.utils import get_executing_context
             node_id = get_executing_context().node_id
@@ -369,6 +377,7 @@ class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
             "use_tensorrt_vae": True,
             "vae_backend": "tensorrt",
             "engine_frames": engine_frames,
+            "engine_tile": engine_tile,
             "node_id": node_id,
         }
         return io.NodeOutput(vae_config)
@@ -412,6 +421,13 @@ class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):
                     tooltip="TensorRT decoder engine frame size. Auto-populated from artifacts. "
                             "auto = pick the largest available engine."
                 ),
+                io.Combo.Input("engine_tile",
+                    options=["auto", "256", "512"],
+                    default="auto",
+                    optional=True,
+                    tooltip="Decoder engine spatial tile size. auto = prefer 256px (512px as legacy fallback). "
+                            "256/512 = use exactly that engine (e.g. vae_decoder_tile_256_21f.rtxplan)."
+                ),
             ],
             outputs=[
                 io.Custom("SEEDVR2_VAE").Output(
@@ -422,7 +438,8 @@ class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):
 
     @classmethod
     def execute(cls, model: str, device: str,
-                engine_frames: str = "auto") -> io.NodeOutput:
+                engine_frames: str = "auto",
+                engine_tile: str = "auto") -> io.NodeOutput:
         try:
             from comfy_execution.utils import get_executing_context
             node_id = get_executing_context().node_id
@@ -437,6 +454,7 @@ class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):
             "use_tensorrt_vae": True,
             "vae_backend": "tensorrt",
             "engine_frames": engine_frames,
+            "engine_tile": engine_tile,
             "node_id": node_id,
         }
         return io.NodeOutput(vae_config)
