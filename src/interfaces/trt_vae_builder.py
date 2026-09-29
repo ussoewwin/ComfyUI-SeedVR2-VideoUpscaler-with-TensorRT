@@ -91,11 +91,11 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                 ),
                 io.Int.Input("frames",
                     default=89,
-                    min=5,
+                    min=1,
                     max=4096,
                     step=4,
                     tooltip="Batch/frame size for the engine. Auto-normalized to 4n+1 "
-                            "(e.g. 89, 93, 97, 101, 185, 205)."
+                            "(e.g. 1, 89, 93, 101, 185, 205)."
                 ),
                 io.Combo.Input("tile_size",
                     options=["256", "512"],
