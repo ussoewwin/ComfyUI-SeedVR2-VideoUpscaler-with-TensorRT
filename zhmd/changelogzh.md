@@ -9,6 +9,13 @@
 
 Fork 发行历史。
 
+## v1.5.6 — 2026-09-29
+- **摘要：** 下载策略修正与模型注册表更新：
+  - **仅限加载器选择触发的模型下载：** 移除全部强制自动下载——模型仅在选择于加载器节点且文件缺失时下载；安装/更新时不再预下载默认模型，TensorRT VAE 引擎构建也不再附带拉取默认 DiT（[#2](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/2)）。
+  - **新增 6 个 ConvRot INT8 / NVFP4 DiT 模型：** `seedvr2_3b_int8_convrot`、`seedvr2_3b_nvfp4`、`seedvr2_7b_int8_convrot`、`seedvr2_7b_nvfp4`、`seedvr2_7b_sharp_int8_convrot`、`seedvr2_7b_sharp_nvfp4`（托管于 `Comfy-Org/SeedVR2`，SHA256 锁定）已加入模型注册表与下载列表。
+  - **移除 GGUF 条目：** 从模型注册表中删除 GGUF（Q4_K_M / Q8_0）DiT 条目。
+- **技术详情：** 请参阅 [v1.5.6 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.6) 获取完整说明
+
 ## v1.5.5 — 2026-09-28
 - **摘要：** 生产环境稳定性改进与 TensorRT VAE 编码器全面重构：
   - **FFmpeg CFR 时间戳整流：** 彻底根除视频合并时的音画不同步及播放末端卡死。

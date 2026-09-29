@@ -9,6 +9,13 @@
 
 Fork release history.
 
+## v1.5.6 — 2026-09-29
+- **Summary:** Download-policy correction and model-registry updates:
+  - **Loader-Only Model Downloads:** Removed all forced auto-downloads. Models are now downloaded only when a model is selected in a loader node and the file is missing — the installer no longer pre-downloads the default models on install/update, and the TensorRT VAE engine build no longer fetches the default DiT ([#2](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/2)).
+  - **Six ConvRot INT8 / NVFP4 DiT Models Registered:** `seedvr2_3b_int8_convrot`, `seedvr2_3b_nvfp4`, `seedvr2_7b_int8_convrot`, `seedvr2_7b_nvfp4`, `seedvr2_7b_sharp_int8_convrot`, and `seedvr2_7b_sharp_nvfp4` (hosted on `Comfy-Org/SeedVR2`, SHA256-pinned) added to the model registry and download lists.
+  - **GGUF Entries Removed:** GGUF (Q4_K_M / Q8_0) DiT entries removed from the model registry.
+- **Technical Details:** See [v1.5.6 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.6) for complete explanation
+
 ## v1.5.5 — 2026-09-28
 - **Summary:** Production reliability improvements and comprehensive TensorRT VAE Encoder refactoring:
   - **FFmpeg CFR & Timestamp Rectification:** Eliminated video/audio desynchronization and endpoint freeze during video assembly.
