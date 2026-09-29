@@ -27,6 +27,8 @@
 
 ![Usage Example - TensorRT VAE Encoder & Decoder Nodes](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
 
+**`SeedVR2 Load TensorRT VAE Encoder`** 与 **`SeedVR2 Load TensorRT VAE Decoder`** 节点提供两个选择器：**`engine_frames`**（引擎帧长规格；`auto` = 使用可用的最大引擎）与 **`engine_tile`**（空间分块；`auto` / `256` / `512`）。`auto` 保持默认偏好（编码器优先 512px，解码器优先 256px、512px 作为旧版回退）；选择 `256` 或 `512` 时将严格限定为该分块的引擎——若对应分块的引擎不存在，节点会直接报错，而不会静默回退到其他分块。
+
 ### TensorRT VAE 引擎构建节点
 
 - 工作流 JSON：[`example_workflows/Tensor Build.json`](../example_workflows/Tensor%20Build.json)

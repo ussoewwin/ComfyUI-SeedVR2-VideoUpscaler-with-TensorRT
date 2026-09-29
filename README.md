@@ -27,6 +27,8 @@ This repository is a fork of the official repository ([https://github.com/numz/C
 
 ![Usage Example - TensorRT VAE Encoder & Decoder Nodes](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_02.png)
 
+The **`SeedVR2 Load TensorRT VAE Encoder`** and **`SeedVR2 Load TensorRT VAE Decoder`** nodes provide two selectors: **`engine_frames`** (engine frame size; `auto` = largest available) and **`engine_tile`** (spatial tile; `auto` / `256` / `512`). `auto` keeps the default preference (Encoder: 512px first; Decoder: 256px first, 512px legacy fallback), while `256` / `512` strictly restrict the engine to that tile — if no engine exists for the selected tile, the node raises an explicit error instead of silently falling back.
+
 ### TensorRT VAE Engine Builder Node
 
 - Workflow JSON: [`example_workflows/Tensor Build.json`](example_workflows/Tensor%20Build.json)
