@@ -20,7 +20,7 @@
 ### 1.4B 蒸馏模型支持
 
 - 来自 [lvladikov/SeedVR2-1.4B](https://huggingface.co/lvladikov/SeedVR2-1.4B) 的 6 层蒸馏权重 `seedvr2_distill_6L_1.4B_sharp_fp16_comfyui.safetensors` 可通过专用的 `configs_1p4b` 架构配置支持（与 7B 相同的块设计：3072 维 / 24 头 / 6 层）。按文件名自动解析配置（`1.4b`、`1p4b` 或 `6l`）。
-- 仅支持 FP16。对该蒸馏模型进行 INT8 / NVFP4 量化会严重劣化画质，不建议使用。
+- ConvRot INT8 与 FP16 画质相同，可正常使用。NVFP4 量化会严重劣化画质，不建议使用。
 
 ### 完整工作流概览（TensorRT VAE 与量化模型）
 
