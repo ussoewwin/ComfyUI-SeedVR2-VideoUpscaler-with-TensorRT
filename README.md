@@ -17,6 +17,11 @@ This repository is a fork of the official repository ([https://github.com/numz/C
 
 ## Workflow & Node Examples
 
+### 1.4B Distilled Model Support
+
+- The 6-layer distilled checkpoint `seedvr2_distill_6L_1.4B_sharp_fp16_comfyui.safetensors` (from [lvladikov/SeedVR2-1.4B](https://huggingface.co/lvladikov/SeedVR2-1.4B)) is supported via a dedicated `configs_1p4b` architecture config (same 7B block design at 3072 dim / 24 heads / 6 layers). Config resolution is automatic by filename (`1.4b`, `1p4b`, or `6l`).
+- FP16 only. INT8 / NVFP4 quantization of this distilled model degrades quality severely and is not recommended.
+
 ### Complete Workflow Overview (TensorRT VAE & Quantized Models)
 
 - Workflow JSON: [`example_workflows/SeedVR2_tensorrt.json`](example_workflows/SeedVR2_tensorrt.json)
