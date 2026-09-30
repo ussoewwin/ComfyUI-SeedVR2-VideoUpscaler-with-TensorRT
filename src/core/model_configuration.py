@@ -789,9 +789,14 @@ def _create_new_runner(
              category="runner", force=True)
     
     debug.start_timer("config_load")
-    config_path = os.path.join(script_directory, 
-                              './configs_7b' if "7b" in dit_model else './configs_3b', 
-                              'main.yaml')
+    name_lower = dit_model.lower()
+    if "7b" in name_lower:
+        config_folder = './configs_7b'
+    elif "1.4b" in name_lower or "1p4b" in name_lower or "6l" in name_lower:
+        config_folder = './configs_1p4b'
+    else:
+        config_folder = './configs_3b'
+    config_path = os.path.join(script_directory, config_folder, 'main.yaml')
     config = load_config(config_path)
     debug.end_timer("config_load", "Config loading")
     

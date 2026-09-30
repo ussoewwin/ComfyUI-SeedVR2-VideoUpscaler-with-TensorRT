@@ -90,6 +90,8 @@ def resolve_dit_config_folder(dit_model: str) -> str:
         return "configs_7b"
     if "3b" in name:
         return "configs_3b"
+    if "1.4b" in name or "1p4b" in name or "6l" in name:
+        return "configs_1p4b"
     return "configs_3b"
 
 def get_available_dit_models() -> List[str]:
