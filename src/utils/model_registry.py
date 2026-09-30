@@ -53,6 +53,9 @@ MODEL_REGISTRY = {
     "seedvr2_7b_sharp_int8_convrot.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="int8_tensorwise_convrot", variant="sharp", sha256="db48be2f1cc7e36b01a2aa529810f5d9c6a971edd29be225cf1b0eb18d51c366"),
     "seedvr2_7b_sharp_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="nvfp4", variant="sharp", sha256="80d57af7722f5a5bd4c01d2ab2688f2bf05e552e59d3d3287257de709db10397"),
     
+    # 1.4B distilled (6-layer) variants
+    "seedvr2_distill_6L_1.4B_sharp_convrot_int8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-1.4B-ConvRot-INT8", size="1.4B", precision="int8_tensorwise_convrot", variant="sharp", sha256="7ab0eddbc64d8adf2a6453e229f28d5322a395ee79374297a2929a5c729042b7"),
+
     # VAE models
     "ema_vae_fp16.safetensors": ModelInfo(category="vae", precision="fp16", sha256="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"),
 }
