@@ -46,6 +46,11 @@ class MLP(nn.Module):
 
 
 class SwiGLUMLP(nn.Module):
+    # Token count threshold for activating chunked forward.
+    # Below this, the single-expression path is faster with negligible VRAM impact.
+    # Above this, chunking prevents ~2-3 GB activation spikes per block.
+    CHUNK_THRESHOLD = 8192
+
     def __init__(
         self,
         dim: int,
@@ -62,5 +67,25 @@ class SwiGLUMLP(nn.Module):
         self.proj_in = ops.Linear(dim, hidden_dim, bias=False)
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        x = self.proj_out(F.silu(self.proj_in_gate(x)) * self.proj_in(x))
-        return x
+        seq_len = x.shape[0]
+
+        if seq_len <= self.CHUNK_THRESHOLD:
+            # Fast path: single expression, no chunking overhead
+            return self.proj_out(F.silu(self.proj_in_gate(x)) * self.proj_in(x))
+
+        # Chunked path: split tokens to cap peak VRAM from gate/up/hidden
+        # Each chunk holds at most CHUNK_THRESHOLD tokens worth of (L_chunk, hidden_dim)
+        # tensors, reducing peak from 3 * L * hidden_dim to 3 * chunk_size * hidden_dim
+        num_chunks = (seq_len + self.CHUNK_THRESHOLD - 1) // self.CHUNK_THRESHOLD
+        output = torch.empty(seq_len, x.shape[-1], dtype=x.dtype, device=x.device)
+
+        for i in range(num_chunks):
+            start = i * self.CHUNK_THRESHOLD
+            end = min(start + self.CHUNK_THRESHOLD, seq_len)
+            x_chunk = x[start:end]
+            # gate, up, hidden are allocated only for this chunk then freed
+            output[start:end] = self.proj_out(
+                F.silu(self.proj_in_gate(x_chunk)) * self.proj_in(x_chunk)
+            )
+
+        return output

@@ -582,18 +582,35 @@ class VideoDiffusionInfer():
         latents, latents_shapes = na.flatten(noises)
         latents_cond, _ = na.flatten(conditions)
         
+        # P3 VRAM optimization: pre-allocate the 33-channel condition tensor once.
+        # x_t is 16ch, latents_cond is 17ch → total 33ch.
+        # Instead of torch.cat([x_t, cond]) every step (2 allocations per CFG call),
+        # we write x_t into the pre-allocated buffer's first 16 channels in-place.
+        x_t_channels = latents.shape[-1]
+        vid_buffer = torch.empty(
+            latents.shape[0], x_t_channels + latents_cond.shape[-1],
+            dtype=latents.dtype, device=latents.device
+        )
+        # Condition channels are constant across steps — write once
+        vid_buffer[:, x_t_channels:] = latents_cond
+        
+        def _make_vid(x_t):
+            """Write x_t into pre-allocated buffer and return it (zero-alloc)."""
+            vid_buffer[:, :x_t_channels] = x_t
+            return vid_buffer
+        
         latents = self.sampler.sample(
             x=latents,
             f=lambda args: classifier_free_guidance_dispatcher(
                 pos=lambda: self.dit(
-                    vid=torch.cat([args.x_t, latents_cond], dim=-1),
+                    vid=_make_vid(args.x_t),
                     txt=text_pos_embeds,
                     vid_shape=latents_shapes,
                     txt_shape=text_pos_shapes,
                     timestep=args.t.repeat(batch_size),
                 ).vid_sample,
                 neg=lambda: self.dit(
-                    vid=torch.cat([args.x_t, latents_cond], dim=-1),
+                    vid=_make_vid(args.x_t),
                     txt=text_neg_embeds,
                     vid_shape=latents_shapes,
                     txt_shape=text_neg_shapes,

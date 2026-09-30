@@ -26,42 +26,45 @@ from torch import nn
 
 def pytorch_varlen_attention(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q=None, max_seqlen_k=None, dropout_p=0.0, softmax_scale=None, causal=False, deterministic=False):
     """
-    A PyTorch-based implementation of variable-length attention to replace flash_attn_varlen_func.
-    It processes each sequence in the batch individually.
+    VRAM-optimized PyTorch variable-length attention.
     
-    NOTE: max_seqlen_q and max_seqlen_k are accepted for API compatibility but not used.
-    PyTorch's scaled_dot_product_attention automatically handles variable sequence lengths.
+    Pre-allocates a single output buffer and writes each window's result directly
+    into the correct slice, eliminating the 2x VRAM spike from output_splits list
+    + torch.cat that plagued the original implementation.
     
-    COMPILE OPTIMIZATION: Uses torch.tensor_split to avoid .item() graph breaks
+    Also caches cu_seqlens CPU conversion to avoid per-window CPU-GPU sync stalls.
     """
-    # Split q, k, v using cumulative sequence lengths
-    # NOTE: torch.tensor_split requires int64 dtype and CPU device (PyTorch requirements)
-    q_splits = list(torch.tensor_split(q, cu_seqlens_q[1:-1].long().cpu(), dim=0))
-    k_splits = list(torch.tensor_split(k, cu_seqlens_k[1:-1].long().cpu(), dim=0))
-    v_splits = list(torch.tensor_split(v, cu_seqlens_k[1:-1].long().cpu(), dim=0))
-
-    # Process each sequence
-    output_splits = []
-    for q_i, k_i, v_i in zip(q_splits, k_splits, v_splits):
-        # Reshape for torch's scaled_dot_product_attention which expects (batch, heads, seq, dim).
-        # Here, we treat each sequence as a batch of 1.
-        q_i = q_i.permute(1, 0, 2).unsqueeze(0) # (1, heads, seq_len_q, head_dim)
-        k_i = k_i.permute(1, 0, 2).unsqueeze(0) # (1, heads, seq_len_k, head_dim)
-        v_i = v_i.permute(1, 0, 2).unsqueeze(0) # (1, heads, seq_len_k, head_dim)
-
-        # Use PyTorch's built-in scaled dot-product attention.
-        output_i = F.scaled_dot_product_attention(
-            q_i, k_i, v_i, 
-            dropout_p=dropout_p if not deterministic else 0.0,
-            is_causal=causal
-        )
-
-        # Reshape the output back to the original format (seq_len, heads, head_dim)
-        output_i = output_i.squeeze(0).permute(1, 0, 2)
-        output_splits.append(output_i)
+    total_len, num_heads, head_dim = q.shape
     
-    # Concatenate all outputs
-    return torch.cat(output_splits, dim=0)
+    # Pre-allocate output buffer — single allocation, no duplication
+    output = torch.empty_like(q)
+    
+    # Convert cu_seqlens to CPU once (avoid repeated CPU-GPU sync per window)
+    cu_q_cpu = cu_seqlens_q.long().cpu()
+    cu_k_cpu = cu_seqlens_k.long().cpu()
+    num_seqs = len(cu_q_cpu) - 1
+    
+    drop_p = dropout_p if not deterministic else 0.0
+    
+    for i in range(num_seqs):
+        q_start, q_end = cu_q_cpu[i].item(), cu_q_cpu[i + 1].item()
+        k_start, k_end = cu_k_cpu[i].item(), cu_k_cpu[i + 1].item()
+        
+        # Reshape: (seq, heads, dim) → (1, heads, seq, dim) for SDPA
+        q_i = q[q_start:q_end].permute(1, 0, 2).unsqueeze(0)
+        k_i = k[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
+        v_i = v[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
+        
+        out_i = F.scaled_dot_product_attention(
+            q_i, k_i, v_i,
+            dropout_p=drop_p,
+            is_causal=causal,
+        )
+        
+        # Write directly into pre-allocated buffer — no intermediate list
+        output[q_start:q_end] = out_i.squeeze(0).permute(1, 0, 2)
+    
+    return output
 
 
 class TorchAttention(nn.Module):

@@ -402,7 +402,7 @@ def repeat_concat_idx(
         
         COMPILE OPTIMIZATION: Uses unflatten with tensor dims (compile-friendly)
         """
-        vid_out, txt_out = all[src_idx].split([len(vid_idx), txt_idx_len])
+        vid_out, txt_out = torch.index_select(all, 0, src_idx).split([len(vid_idx), txt_idx_len])
         
         # Coalesce repeated text using unflatten and mean
         txt_splits = _tensor_split(txt_out, repeat_txt_len, dim=0)
@@ -416,10 +416,10 @@ def repeat_concat_idx(
         
         return vid_out, torch.cat(txt_out_coalesced)
 
-    # Note: Using direct indexing instead of torch.index_select for backward compatibility
-    # Direct indexing is deterministic even with repeated indices
+    # Use torch.index_select for memory-efficient gathering.
+    # index_select writes directly to output buffer without intermediate fancy-index copy.
     return (
-        lambda vid, txt: torch.cat([vid, txt])[tgt_idx],
+        lambda vid, txt: torch.index_select(torch.cat([vid, txt]), 0, tgt_idx),
         lambda all: unconcat_coalesce(all),
     )
 
