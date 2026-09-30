@@ -35,7 +35,7 @@ class ModelInfo:
 MODEL_REGISTRY = {
     # 3B models
     "seedvr2_ema_3b_fp8_e4m3fn.safetensors": ModelInfo(size="3B", precision="fp8_e4m3fn", sha256="3bf1e43ebedd570e7e7a0b1b60d6a02e105978f505c8128a241cde99a8240cff"),
-    "seedvr2_ema_3b_fp16.safetensors": ModelInfo(size="3B", precision="fp16", sha256="2fd0e03a3dad24e07086750360727ca437de4ecd456f769856e960ae93e2b304"),
+    "seedvr2_ema_3b_fp16.safetensors": ModelInfo(size="3B", precision="fp16", sha256="98669fd2c06df5eca88baf68cd5c478775c8e61fc110e598c52b350145ea2660"),
     # HSWQ INT8 / NVFP4 (native VRAM path; same as 7B)
     "seedvr2_3b_int8_convrot.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="3B", precision="int8_tensorwise_convrot", sha256="c3dec8bcc5916843a8a858572970597462e1f2dc598d6dfd818f6cd40f53a157"),
     "seedvr2_3b_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="3B", precision="nvfp4", sha256="c8dea38b04d43295621726e2cd371c0d2d001006169c113aea17950f2cb2e295"),
