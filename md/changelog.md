@@ -9,6 +9,14 @@
 
 Fork release history.
 
+## v1.5.7 — 2026-09-30
+- **Summary:** DiT execution VRAM spike mitigation and activation memory stabilization:
+  - **SDPA Output Buffer Pre-allocation:** Replaced slice accumulation in a Python list and final `torch.cat()` with a single pre-allocated output buffer and direct slice writes, eliminating the 2x VRAM duplication spike and unnecessary CPU-GPU synchronizations in `pytorch_varlen_attention`.
+  - **Chunked SwiGLU MLP Forward:** Implemented sequence chunking along the token dimension for sequences exceeding 8,192 tokens in `SwiGLUMLP`, capping simultaneous intermediate `gate`, `up`, and `hidden` tensor allocations and slashing peak activation VRAM from ~2.0 GB down to ~330 MB per transformer block with bit-exact parity.
+  - **Memory-Efficient Gathering via `torch.index_select`:** Replaced advanced fancy indexing `torch.cat([vid, txt])[tgt_idx]` with dedicated CUDA kernel `torch.index_select` across text token replication in Swin Window Attention, avoiding implicit buffer duplicates.
+  - **Euler Condition Buffer In-Place Reuse:** Pre-allocated the 33-channel condition tensor buffer once prior to the sampling loop, reusing it via in-place slice writes across all diffusion steps to eliminate repetitive per-step dynamic allocations and allocator fragmentation.
+- **Technical Details:** See [v1.5.7 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.7) for complete explanation
+
 ## v1.5.6 — 2026-09-29
 - **Summary:** Download-policy correction and model-registry updates:
   - **Loader-Only Model Downloads:** Removed all forced auto-downloads. Models are now downloaded only when a model is selected in a loader node and the file is missing — the installer no longer pre-downloads the default models on install/update, and the TensorRT VAE engine build no longer fetches the default DiT ([#2](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/issues/2)).
