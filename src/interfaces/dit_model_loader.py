@@ -118,6 +118,18 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                         "Flash Attention and SageAttention provide speedup through optimized CUDA kernels on compatible GPUs."
                     )
                 ),
+                io.Combo.Input("sparge_topk",
+                    options=["0.05", "0.1", "0.15", "0.2", "0.25", "0.3", "0.35", "0.4", "0.45", "0.5", "0.55", "0.6", "0.65", "0.7", "0.75", "0.8", "0.85", "0.9", "0.95", "1.0"],
+                    default="0.5",
+                    optional=True,
+                    tooltip=(
+                        "SpargeAttn topK ratio (only used when attention_mode=spargeattn):\n"
+                        "• KV block keep ratio for the two-stage block-sparse filter (0.05-1.0)\n"
+                        "• Higher = more blocks computed = more accurate, less acceleration\n"
+                        "• 1.0 = compute all blocks (no skipping)\n"
+                        "• Ignored by other attention backends\n"
+                    )
+                ),
                 io.Custom("TORCH_COMPILE_ARGS").Input("torch_compile_args",
                     optional=True,
                     tooltip=(
@@ -136,7 +148,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
     @classmethod
     def execute(cls, model: str, device: str, offload_device: str = "none",
                      cache_model: bool = False, blocks_to_swap: int = 0, 
-                     swap_io_components: bool = False, attention_mode: str = "sdpa",
+                     swap_io_components: bool = False, attention_mode: str = "sdpa", sparge_topk: str = "0.5",
                      torch_compile_args: Dict[str, Any] = None) -> io.NodeOutput:
         """
         Create DiT model configuration for SeedVR2 main node
@@ -174,6 +186,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             "blocks_to_swap": blocks_to_swap,
             "swap_io_components": swap_io_components,
             "attention_mode": attention_mode,
+            "sparge_topk": sparge_topk,
             "torch_compile_args": torch_compile_args,
             "node_id": get_executing_context().node_id,
         }

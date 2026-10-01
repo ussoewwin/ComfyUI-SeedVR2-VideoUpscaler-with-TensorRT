@@ -13,6 +13,7 @@
   - **感知变长的逐窗口执行：** 在 `src/optimization/compatibility.py` 实现 `call_sparge_attn_varlen`，仿照 `pytorch_varlen_attention` 按 `cu_seqlens` 逐窗口循环，覆盖 vid+txt 拼接序列（MSA 与 Swin 窗口注意力两条路径）。
   - **逐窗口约束回退：** 窗口长度不足 128 token 或 headdim 不在 64/128 时，按窗口回退到精确 SDPA（SeedVR2 head_dim 为 128；小分辨率输入会出现短窗口）。
   - **可用性与回退链：** 缺少 `spas_sage_hswq_attn` 包时，`validate_attention_mode` 按 `spargeattn` → `sageattn_2` → `sdpa` 解析。Windows 预构建 wheel：[https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ](https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ)。
+  - **topK 可调：** DiT 加载器节点新增可选 **`sparge_topk`** 输入（COMBO 下拉框 `0.05`…`1.0`，默认 `0.5`），并提供 `--sparge_topk` CLI 参数；运行时净化到 `(0, 1]`（`1.0` = 计算全部块）。非 `spargeattn` 后端忽略。
   - **配套改动：** 新增 `--attention_mode` CLI 选项、DiT 加载器下拉选项与可读模式描述；`dit_3b` 与 `dit_7b` 的 attention 模块保持字节一致。
 - **验证：** RTX 5060 Ti（SM120，torch 2.14.1+cu132）GPU 实测：混合窗口变长调用（256 + 64 token）—— SpargeAttn 窗口返回量化输出，不足 128 的窗口与 SDPA 完全一致（cos 1.000000）；通过真实 DiT 注意力模块端到端验证 `FlashAttentionVarlen(attention_mode='spargeattn')`。
 

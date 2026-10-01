@@ -510,6 +510,7 @@ def prepare_runner(
         decode_tile_overlap=decode_tile_overlap,
         tile_debug=tile_debug,
         attention_mode=attention_mode,
+        sparge_topk=sparge_topk,
         torch_compile_args_dit=torch_compile_args_dit,
         torch_compile_args_vae=torch_compile_args_vae
     )

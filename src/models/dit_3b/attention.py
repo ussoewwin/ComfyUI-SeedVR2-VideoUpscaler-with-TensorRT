@@ -96,17 +96,19 @@ class FlashAttentionVarlen(nn.Module):
     All non-SDPA backends use @torch._dynamo.disable wrapper (C++ extensions).
     """
 
-    def __init__(self, attention_mode: str = 'sdpa', compute_dtype: torch.dtype = None):
+    def __init__(self, attention_mode: str = 'sdpa', compute_dtype: torch.dtype = None, sparge_topk: float = 0.5):
         """
         Initialize with specified attention backend.
         
         Args:
             attention_mode: 'sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3', or 'spargeattn'
             compute_dtype: Compute dtype for attention (set by pipeline, defaults to None for auto-detection)
+            sparge_topk: KV block keep ratio for the spargeattn backend (default 0.5)
         """
         super().__init__()
         self.attention_mode = attention_mode
         self.compute_dtype = compute_dtype
+        self.sparge_topk = sparge_topk
 
     def tflops(self, args, kwargs, output) -> float:
         cu_seqlens_q = kwargs["cu_seqlens_q"]
@@ -148,7 +150,8 @@ class FlashAttentionVarlen(nn.Module):
         elif self.attention_mode == 'spargeattn':
             return call_sparge_attn_varlen(
                 q, k, v, cu_seqlens_q, cu_seqlens_k,
-                max_seqlen_q, max_seqlen_k, **kwargs
+                max_seqlen_q, max_seqlen_k,
+                sparge_topk=self.sparge_topk, **kwargs
             )
         else:
             # PyTorch SDPA

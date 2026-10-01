@@ -966,6 +966,7 @@ def _process_frames_core(
         decode_tile_overlap=(args.vae_decode_tile_overlap, args.vae_decode_tile_overlap),
         tile_debug=args.tile_debug.lower() if args.tile_debug else "false",
         attention_mode=args.attention_mode,
+        sparge_topk=args.sparge_topk,
         torch_compile_args_dit=torch_compile_args_dit,
         torch_compile_args_vae=torch_compile_args_vae
     )
@@ -1478,6 +1479,8 @@ Examples:
     perf_group.add_argument("--attention_mode", type=str, default="sdpa",
                         choices=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3", "spargeattn"],
                         help="Attention backend: 'sdpa' (default), 'flash_attn_2', 'flash_attn_3', 'sageattn_2', or 'sageattn_3' (Blackwell GPUs)")
+    perf_group.add_argument("--sparge_topk", type=float, default=0.5,
+                        help="SpargeAttn topK ratio (only with --attention_mode spargeattn): KV block keep ratio, 0.05-1.0 (1.0 = compute all blocks)")
     perf_group.add_argument("--compile_dit", action="store_true", 
                         help="Enable torch.compile for DiT model (20-40%% speedup, requires PyTorch 2.0+ and Triton)")
     perf_group.add_argument("--compile_vae", action="store_true",

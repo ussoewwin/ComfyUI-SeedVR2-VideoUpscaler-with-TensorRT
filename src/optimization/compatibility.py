@@ -603,7 +603,7 @@ except ImportError:
 
 
 @torch._dynamo.disable
-def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, **kwargs):
+def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, sparge_topk: float = 0.5, **kwargs):
     """
     SpargeAttn-hswq block-sparse attention for packed variable-length sequences.
 
@@ -667,9 +667,15 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
         if seq_len < 128 or headdim not in (64, 128):
             out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
         else:
+            try:
+                _topk = float(sparge_topk)
+            except (TypeError, ValueError):
+                _topk = 0.5
+            if not (_topk > 0.0) or _topk > 1.0:
+                _topk = 0.5
             out_i = spas_sage2_attn_meansim_topk_cuda(
                 q_i, k_i, v_i,
-                topk=0.5,
+                topk=_topk,
                 is_causal=is_causal,
                 tensor_layout="HND",
             )

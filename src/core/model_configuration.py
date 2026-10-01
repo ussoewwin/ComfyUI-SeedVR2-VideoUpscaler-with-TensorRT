@@ -488,11 +488,23 @@ def _handle_blockswap_change(
     runner._blockswap_active = False
 
 
+def _safe_topk(value: Optional[float]) -> float:
+    """Sanitize a SpargeAttn topk value; (0, 1] kept, everything else -> 0.5."""
+    try:
+        k = float(value)
+    except (TypeError, ValueError):
+        return 0.5
+    if not (k > 0.0) or k > 1.0:
+        return 0.5
+    return k
+
+
 def _update_dit_config(
     runner: 'VideoDiffusionInfer',
     block_swap_config: Optional[Dict[str, Any]],
     torch_compile_args: Optional[Dict[str, Any]],
     attention_mode: Optional[str],
+    sparge_topk: Optional[float] = None,
     debug: Optional['Debug'] = None
 ) -> bool:
     """
@@ -527,17 +539,20 @@ def _update_dit_config(
         new_configs={
             'torch_compile': torch_compile_args,
             'block_swap': block_swap_config,
-            'attention_mode': attention_mode
+            'attention_mode': attention_mode,
+            'sparge_topk': sparge_topk
         },
         cached_config_attrs={
             'torch_compile': '_dit_compile_args',
             'block_swap': '_dit_block_swap_config',
-            'attention_mode': '_dit_attention_mode'
+            'attention_mode': '_dit_attention_mode',
+            'sparge_topk': '_dit_sparge_topk'
         },
         model_config_attrs={
             'torch_compile': '_config_compile',
             'block_swap': '_config_swap',
-            'attention_mode': '_config_attn'
+            'attention_mode': '_config_attn',
+            'sparge_topk': '_config_sparge_topk'
         },
         config_describers={
             'torch_compile': _describe_compile_config,
@@ -828,6 +843,7 @@ def configure_runner(
     decode_tile_overlap: Optional[Tuple[int, int]] = None,
     tile_debug: str = "false",
     attention_mode: str = 'sdpa',
+    sparge_topk: Optional[float] = None,
     torch_compile_args_dit: Optional[Dict[str, Any]] = None,
     torch_compile_args_vae: Optional[Dict[str, Any]] = None
 ) -> Tuple[VideoDiffusionInfer, Dict[str, Any]]:
@@ -900,7 +916,7 @@ def configure_runner(
         runner, ctx,
         encode_tiled, encode_tile_size, encode_tile_overlap,
         decode_tiled, decode_tile_size, decode_tile_overlap,
-        tile_debug, attention_mode,
+        tile_debug, attention_mode, sparge_topk,
         torch_compile_args_dit, torch_compile_args_vae,
         block_swap_config, debug
     )
@@ -925,6 +941,7 @@ def _configure_runner_settings(
     decode_tile_overlap: Optional[Tuple[int, int]],
     tile_debug: str,
     attention_mode: str,
+    sparge_topk: Optional[float],
     torch_compile_args_dit: Optional[Dict[str, Any]],
     torch_compile_args_vae: Optional[Dict[str, Any]],
     block_swap_config: Optional[Dict[str, Any]],
@@ -969,6 +986,7 @@ def _configure_runner_settings(
     runner._new_vae_compile_args = torch_compile_args_vae
     runner._new_dit_block_swap_config = block_swap_config
     runner._new_dit_attention_mode = attention_mode
+    runner._new_dit_sparge_topk = sparge_topk
     runner._new_vae_tiling_config = {
         'encode_tiled': encode_tiled,
         'encode_tile_size': encode_tile_size,
@@ -1032,17 +1050,20 @@ def _setup_models(
     # Only update DiT config if model was cached/reused (not newly created)
     if not dit_created and hasattr(runner, 'dit') and runner.dit is not None:
         _update_dit_config(runner, runner._new_dit_block_swap_config, 
-                         runner._new_dit_compile_args, runner._new_dit_attention_mode, debug)
+                         runner._new_dit_compile_args, runner._new_dit_attention_mode,
+                         runner._new_dit_sparge_topk, debug)
     elif dit_created:
         # For newly created models, just set initial config attributes (no comparison needed)
         runner._dit_compile_args = runner._new_dit_compile_args
         runner._dit_block_swap_config = runner._new_dit_block_swap_config
         runner._dit_attention_mode = runner._new_dit_attention_mode
+        runner._dit_sparge_topk = _safe_topk(runner._new_dit_sparge_topk)
         # Also store on model so config travels with the model when cached
         if hasattr(runner, 'dit') and runner.dit:
             runner.dit._config_compile = runner._new_dit_compile_args
             runner.dit._config_swap = runner._new_dit_block_swap_config
             runner.dit._config_attn = runner._new_dit_attention_mode
+            runner.dit._config_sparge_topk = runner._dit_sparge_topk
     
     # Setup VAE
     vae_created = _setup_vae_model(runner, cache_context, vae_model, base_cache_dir, debug)
@@ -1117,6 +1138,7 @@ def _setup_dit_model(
         runner._dit_compile_args = getattr(runner.dit, '_config_compile', None)
         runner._dit_block_swap_config = getattr(runner.dit, '_config_swap', None)
         runner._dit_attention_mode = getattr(runner.dit, '_config_attn', None)
+        runner._dit_sparge_topk = getattr(runner.dit, '_config_sparge_topk', None)
         
         # blockswap_active will be set by apply_block_swap_to_dit
         # when the model is materialized to the inference device
@@ -1283,10 +1305,15 @@ def apply_model_specific_config(model: torch.nn.Module, runner: VideoDiffusionIn
             
             # Update all FlashAttentionVarlen instances
             updated_count = 0
+            _sparge_topk = None
+            if attention_mode == 'spargeattn':
+                _sparge_topk = _safe_topk(getattr(runner, '_dit_sparge_topk', None))
             for module in actual_model.modules():
                 if type(module).__name__ == 'FlashAttentionVarlen':
                     module.attention_mode = attention_mode
                     module.compute_dtype = compute_dtype
+                    if _sparge_topk is not None:
+                        module.sparge_topk = _sparge_topk
                     updated_count += 1
             
             if updated_count > 0:
