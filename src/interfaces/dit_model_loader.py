@@ -102,7 +102,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                     )
                 ),
                 io.Combo.Input("attention_mode",
-                    options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3"],
+                    options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3", "spargeattn"],
                     default="sdpa",
                     optional=True,
                     tooltip=(
@@ -112,6 +112,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                         "• flash_attn_3: Flash Attention 3 (Hopper+, requires flash-attn with FA3 support)\n"
                         "• sageattn_2: SageAttention 2 (requires sageattention package)\n"
                         "• sageattn_3: SageAttention 3 (Blackwell/RTX 50xx only, requires sageattn3 package)\n"
+                        "• spargeattn: SpargeAttn-hswq block-sparse attention on SageAttention2++ kernels (requires spas_sage_hswq_attn package; topk fixed at 0.5; per-window seq_len >= 128 and headdim 64/128 required, otherwise falls back per window)\n"
                         "\n"
                         "SDPA is recommended - stable and works everywhere.\n"
                         "Flash Attention and SageAttention provide speedup through optimized CUDA kernels on compatible GPUs."
@@ -147,7 +148,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             cache_model: Whether to keep model loaded between runs
             blocks_to_swap: Number of transformer blocks to swap (requires offload_device != device)
             swap_io_components: Whether to offload I/O components (requires offload_device != device)
-            attention_mode: Attention computation backend ('sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', or 'sageattn_3')
+            attention_mode: Attention computation backend ('sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3', 'spargeattn', or 'sageattn_3')
             torch_compile_args: Optional torch.compile configuration from settings node
             
         Returns:

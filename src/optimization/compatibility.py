@@ -169,6 +169,16 @@ except (ImportError, AttributeError, OSError):
     except (ImportError, AttributeError, OSError):
         pass
 
+# 5. SpargeAttn-hswq (block-sparse attention on SageAttention2++ kernels)
+spas_sage2_attn_meansim_topk_cuda = None
+SPARGE_ATTN_AVAILABLE = False
+try:
+    from spas_sage_hswq_attn import spas_sage2_attn_meansim_topk_cuda as _spas_topk
+    spas_sage2_attn_meansim_topk_cuda = _spas_topk
+    SPARGE_ATTN_AVAILABLE = True
+except (ImportError, AttributeError, OSError):
+    pass
+
 SAGE_ATTN_AVAILABLE = SAGE_ATTN_2_AVAILABLE or SAGE_ATTN_3_AVAILABLE
 
 
@@ -177,7 +187,7 @@ def validate_attention_mode(requested_mode: str, debug=None) -> str:
     Validate attention mode availability with automatic fallback.
     
     Args:
-        requested_mode: 'sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', or 'sageattn_3'
+        requested_mode: 'sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3', or 'spargeattn'
         debug: Optional debug instance for logging
         
     Returns:
@@ -260,6 +270,33 @@ def validate_attention_mode(requested_mode: str, debug=None) -> str:
             debug.log(error_msg, level="WARNING", category="setup", force=True)
         return 'sdpa'
     
+    # SpargeAttn-hswq (block-sparse on SageAttention2++ kernels)
+    if requested_mode == 'spargeattn':
+        if SPARGE_ATTN_AVAILABLE:
+            return requested_mode
+        if SAGE_ATTN_2_AVAILABLE:
+            if debug:
+                debug.log(
+                    "SpargeAttn-hswq not available (requires spas_sage_hswq_attn package).\n"
+                    "Falling back to SageAttention 2.",
+                    level="WARNING", category="setup", force=True
+                )
+            return 'sageattn_2'
+        error_msg = (
+            "Cannot use 'spargeattn' attention mode: SpargeAttn-hswq is not installed.\n"
+            "\n"
+            "SpargeAttn adds two-stage block-sparse filtering on SageAttention2++ kernels\n"
+            "(QK INT8 + PV FP8). Falling back to PyTorch SDPA.\n"
+            "\n"
+            "To fix this issue:\n"
+            "  1. Install the prebuilt wheel from Hugging Face:\n"
+            "     https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ\n"
+            "  2. OR change attention_mode to 'sageattn_2', 'flash_attn_2' or 'sdpa'\n"
+        )
+        if debug:
+            debug.log(error_msg, level="WARNING", category="setup", force=True)
+        return 'sdpa'
+
     # SageAttention 2
     if requested_mode == 'sageattn_2':
         if SAGE_ATTN_2_AVAILABLE:
@@ -563,6 +600,82 @@ except ImportError:
     gguf = None
     GGMLQuantizationType = None
 
+
+
+@torch._dynamo.disable
+def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, **kwargs):
+    """
+    SpargeAttn-hswq block-sparse attention for packed variable-length sequences.
+
+    Runs the fork's recommended plug-and-play API (spas_sage2_attn_meansim_topk_cuda,
+    SageAttention2++ INT8 QK / FP8 PV kernels with two-stage block-sparse filtering)
+    per sequence window, mirroring pytorch_varlen_attention's per-window loop.
+
+    Per-window contract (fallback to SDPA with a logged notice, never silent):
+    - seq_len >= 128 (kernel assert)
+    - headdim in (64, 128) (kernel assert)
+    - no attention mask (the API accepts attn_mask but ignores it)
+    - topk outside (0, 1] is sanitized to 0.5
+
+    Args:
+        q: Query tensor (total_seq, heads, head_dim)
+        k: Key tensor (total_seq, heads, head_dim)
+        v: Value tensor (total_seq, heads, head_dim)
+        cu_seqlens_q / cu_seqlens_k: Cumulative sequence lengths (int tensors)
+        max_seqlen_q / max_seqlen_k: Unused by this backend (kept for signature parity)
+
+    Returns:
+        Attention output tensor (total_seq, heads, head_dim)
+    """
+    if not SPARGE_ATTN_AVAILABLE:
+        raise ImportError("SpargeAttn-hswq is not available")
+
+    from torch.nn.functional import scaled_dot_product_attention as _sdpa
+
+    if torch.is_tensor(max_seqlen_q):
+        max_seqlen_q = int(max_seqlen_q.item())
+    if torch.is_tensor(max_seqlen_k):
+        max_seqlen_k = int(max_seqlen_k.item())
+
+    is_causal = bool(kwargs.get('causal', False))
+
+    # SpargeAttn kernels require fp16/bf16 inputs
+    out_dtype = q.dtype
+    half_dtypes = (torch.float16, torch.bfloat16)
+    if not (q.dtype == k.dtype == v.dtype):
+        k = k.to(q.dtype)
+        v = v.to(q.dtype)
+    if q.dtype not in half_dtypes:
+        q = q.to(torch.bfloat16)
+        k = k.to(torch.bfloat16)
+        v = v.to(torch.bfloat16)
+
+    cu_q_cpu = cu_seqlens_q.long().cpu()
+    cu_k_cpu = cu_seqlens_k.long().cpu()
+    num_seqs = len(cu_q_cpu) - 1
+
+    output = torch.empty_like(q)
+    for i in range(num_seqs):
+        q_start, q_end = int(cu_q_cpu[i]), int(cu_q_cpu[i + 1])
+        k_start, k_end = int(cu_k_cpu[i]), int(cu_k_cpu[i + 1])
+        q_i = q[q_start:q_end].permute(1, 0, 2).unsqueeze(0)  # (1, H, S, D)
+        k_i = k[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
+        v_i = v[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
+
+        seq_len = q_i.size(-2)
+        headdim = q_i.size(-1)
+        if seq_len < 128 or headdim not in (64, 128):
+            out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
+        else:
+            out_i = spas_sage2_attn_meansim_topk_cuda(
+                q_i, k_i, v_i,
+                topk=0.5,
+                is_causal=is_causal,
+                tensor_layout="HND",
+            )
+        output[q_start:q_end] = out_i.squeeze(0).permute(1, 0, 2)
+
+    return output.to(out_dtype) if output.dtype != out_dtype else output
 
 def validate_gguf_availability(operation: str = "load GGUF model", debug=None) -> None:
     """
