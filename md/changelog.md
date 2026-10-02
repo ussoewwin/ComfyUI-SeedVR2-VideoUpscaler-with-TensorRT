@@ -10,6 +10,12 @@
 Fork release history.
 
 ## v1.5.8 — 2026-10-02
+- **Summary:** TensorRT VAE feather-weight buffers switched to FP16 (encoder & decoder):
+  - The per-window blend `weights` buffer in `trt_encoder.py` / `trt_decoder.py` is now allocated as FP16 instead of FP32 (the `result` accumulation buffer stays FP32). The feather map is a smooth per-pixel blend mask, so the FP16 rounding (~5e-4 relative) changes the final pixel by well under one 8-bit level.
+  - **VRAM Savings:** ~0.85 GiB at 1080p/73f, ~1.68 GiB at 1080p/145f, ~3.37 GiB at 1088p/289f.
+  - **Verification:** PSNR 84–85 dB vs FP32 feather, stable across 15+ repeats at 512px/1024px.
+
+## Unreleased
 - **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq) for the DiT:
   - **Two-Stage Block-Sparse Attention:** Integrates the [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork (`spas_sage_hswq_attn` v1.0.0) — two-stage block-sparse filtering on SageAttention2++ quantized kernels (QK INT8 + PV FP8) via `spas_sage2_attn_meansim_topk_cuda` (the "SpargeAttn+Sage2" combination from the paper's kernel benchmarks).
   - **Varlen-Aware Per-Window Execution:** Implemented `call_sparge_attn_varlen` in `src/optimization/compatibility.py`, mirroring `pytorch_varlen_attention`'s per-window loop over `cu_seqlens` for the packed vid+txt sequences (MSA and Swin-window attention paths).
@@ -18,7 +24,6 @@ Fork release history.
   - **Configurable topK:** New optional **`sparge_topk`** input (COMBO dropdown `0.05`…`1.0`, default `0.5`) on the DiT loader node plus `--sparge_topk` CLI flag; sanitized to `(0, 1]` at run time (`1.0` = compute all blocks). Ignored by non-`spargeattn` backends.
   - **Plumbing:** `--attention_mode` CLI choice, DiT loader combo option, and human-readable mode description added; `dit_3b` and `dit_7b` attention modules kept byte-identical.
 - **Verification:** GPU-tested on RTX 5060 Ti (SM120, torch 2.14.1+cu132): mixed-window varlen call (256 + 64 tokens) — SpargeAttn window returns quantized output, sub-128 window matches SDPA exactly (cos 1.000000); `FlashAttentionVarlen(attention_mode='spargeattn')` exercised end-to-end through the real DiT attention module.
-- **Technical Details:** See [v1.5.8 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.8) for complete explanation
 
 
 ## v1.5.7 — 2026-09-30
