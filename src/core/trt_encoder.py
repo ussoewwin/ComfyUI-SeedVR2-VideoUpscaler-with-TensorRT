@@ -166,8 +166,10 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     raw_h, raw_w = padded_h // 8, padded_w // 8
     tile_lat = tile_px // 8
     overlap_latent = overlap // 8
+    # VRAM: same idea as the decoder - result stays fp32, the feather weights are a smooth
+    # blend map that tolerates fp16 (see trt_decoder.py).
     result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
-    weights = torch.zeros_like(result)
+    weights = torch.zeros_like(result, dtype=torch.float16)
 
     with _ENCODE_LOCK, torch.cuda.stream(stream):
         # Warmup run: forces TensorRT to allocate and bind internal scratchpad memory.
@@ -205,10 +207,10 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
                 wx = _feather(tile_lat, overlap_latent, x != xs[0], x != xs[-1], tile_output.device)
                 window = (wy[:, None] * wx[None, :]).view(1, 1, 1, tile_lat, tile_lat)
                 result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += tile_output.float() * window
-                weights[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += window
+                weights[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += window.to(weights.dtype)
                 del tile_input, tile_output
 
-    encoded = (result / weights.clamp_min(1e-6))[:, :16, :, :latent_h, :latent_w].to(sample.dtype)
+    encoded = (result / weights.clamp_min(1e-6).to(result.dtype))[:, :16, :, :latent_h, :latent_w].to(sample.dtype)
     if _TRT_DEBUG:
         _trt_dbg_stats(f"enc_chunk_out_{frames}f", encoded)
     del source, result, weights
