@@ -10,7 +10,7 @@
 Fork release history.
 
 ## v1.5.9 — 2026-10-02
-- **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq) — two-stage block-sparse attention on SageAttention2++ quantized kernels, with per-window SDPA fallbacks and a configurable `sparge_topk` input (default `0.5`).
+- **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq).
 - **Technical Details:** See [v1.5.9 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.9) for complete explanation
 
 ## v1.5.8 — 2026-10-02

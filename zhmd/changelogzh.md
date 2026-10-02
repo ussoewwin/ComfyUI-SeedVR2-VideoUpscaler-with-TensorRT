@@ -8,7 +8,7 @@
 # 更新日志
 
 ## v1.5.9 — 2026-10-02
-- **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）—— 在 SageAttention2++ 量化内核上实现两阶段块稀疏注意力，带逐窗口 SDPA 回退与可调 `sparge_topk` 输入（默认 `0.5`）。
+- **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）。
 - **技术详情：** 请参阅 [v1.5.9 发行说明](v1.5.9.md) 获取完整说明
 
 ## v1.5.8 — 2026-10-02
