@@ -14,6 +14,7 @@ Fork release history.
   - The per-window blend `weights` buffer in `trt_encoder.py` / `trt_decoder.py` is now allocated as FP16 instead of FP32 (the `result` accumulation buffer stays FP32). The feather map is a smooth per-pixel blend mask, so the FP16 rounding (~5e-4 relative) changes the final pixel by well under one 8-bit level.
   - **VRAM Savings:** ~0.85 GiB at 1080p/73f, ~1.68 GiB at 1080p/145f, ~3.37 GiB at 1088p/289f.
   - **Verification:** PSNR 84–85 dB vs FP32 feather, stable across 15+ repeats at 512px/1024px.
+- **Technical Details:** See [v1.5.8 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.8) for complete explanation
 
 ## v1.5.7 — 2026-09-30
 - **Summary:** DiT execution VRAM spike mitigation and activation memory stabilization:
