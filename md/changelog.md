@@ -13,7 +13,7 @@ Fork release history.
 - **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq) — two-stage block-sparse attention on SageAttention2++ quantized kernels, with per-window SDPA fallbacks and a configurable `sparge_topk` input (default `0.5`).
 - **Technical Details:** See [v1.5.9 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.9) for complete explanation
 
-## v1.5.8 — 2026-10-02## v1.5.8 — 2026-10-02
+## v1.5.8 — 2026-10-02
 - **Summary:** TensorRT VAE feather-weight buffers switched to FP16 (encoder & decoder):
   - The per-window blend `weights` buffer in `trt_encoder.py` / `trt_decoder.py` is now allocated as FP16 instead of FP32 (the `result` accumulation buffer stays FP32). The feather map is a smooth per-pixel blend mask, so the FP16 rounding (~5e-4 relative) changes the final pixel by well under one 8-bit level.
   - **VRAM Savings:** ~0.85 GiB at 1080p/73f, ~1.68 GiB at 1080p/145f, ~3.37 GiB at 1088p/289f.
