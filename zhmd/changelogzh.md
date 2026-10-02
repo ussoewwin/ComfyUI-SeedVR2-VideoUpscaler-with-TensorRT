@@ -7,7 +7,7 @@
 
 # 更新日志
 
-## 未发布
+## v1.5.8 — 2026-10-02
 - **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）：
   - **两阶段块稀疏注意力：** 集成 [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork（`spas_sage_hswq_attn` v1.0.0）—— 通过 `spas_sage2_attn_meansim_topk_cuda` 在 SageAttention2++ 量化内核（QK INT8 + PV FP8）上实现两阶段块稀疏过滤（论文内核基准中的 "SpargeAttn+Sage2" 组合）。
   - **感知变长的逐窗口执行：** 在 `src/optimization/compatibility.py` 实现 `call_sparge_attn_varlen`，仿照 `pytorch_varlen_attention` 按 `cu_seqlens` 逐窗口循环，覆盖 vid+txt 拼接序列（MSA 与 Swin 窗口注意力两条路径）。
@@ -16,6 +16,7 @@
   - **topK 可调：** DiT 加载器节点新增可选 **`sparge_topk`** 输入（COMBO 下拉框 `0.05`…`1.0`，默认 `0.5`），并提供 `--sparge_topk` CLI 参数；运行时净化到 `(0, 1]`（`1.0` = 计算全部块）。非 `spargeattn` 后端忽略。
   - **配套改动：** 新增 `--attention_mode` CLI 选项、DiT 加载器下拉选项与可读模式描述；`dit_3b` 与 `dit_7b` 的 attention 模块保持字节一致。
 - **验证：** RTX 5060 Ti（SM120，torch 2.14.1+cu132）GPU 实测：混合窗口变长调用（256 + 64 token）—— SpargeAttn 窗口返回量化输出，不足 128 的窗口与 SDPA 完全一致（cos 1.000000）；通过真实 DiT 注意力模块端到端验证 `FlashAttentionVarlen(attention_mode='spargeattn')`。
+- **技术详情：** 请参阅 [v1.5.8 发行说明](v1.5.8.md) 获取完整说明
 
 Fork 发行历史。
 
