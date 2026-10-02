@@ -13,18 +13,6 @@
   - **显存节省：** 1080p/73f 约 0.85 GiB，1080p/145f 约 1.68 GiB，1088p/289f 约 3.37 GiB。
   - **验证：** PSNR 84–85 dB，15 次以上重复稳定。
 
-## 未发布
-- **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）：
-  - **两阶段块稀疏注意力：** 集成 [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork（`spas_sage_hswq_attn` v1.0.0）—— 通过 `spas_sage2_attn_meansim_topk_cuda` 在 SageAttention2++ 量化内核（QK INT8 + PV FP8）上实现两阶段块稀疏过滤（论文内核基准中的 "SpargeAttn+Sage2" 组合）。
-  - **感知变长的逐窗口执行：** 在 `src/optimization/compatibility.py` 实现 `call_sparge_attn_varlen`，仿照 `pytorch_varlen_attention` 按 `cu_seqlens` 逐窗口循环，覆盖 vid+txt 拼接序列（MSA 与 Swin 窗口注意力两条路径）。
-  - **逐窗口约束回退：** 窗口长度不足 128 token 或 headdim 不在 64/128 时，按窗口回退到精确 SDPA（SeedVR2 head_dim 为 128；小分辨率输入会出现短窗口）。
-  - **可用性与回退链：** 缺少 `spas_sage_hswq_attn` 包时，`validate_attention_mode` 按 `spargeattn` → `sageattn_2` → `sdpa` 解析。Windows 预构建 wheel：[https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ](https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ)。
-  - **topK 可调：** DiT 加载器节点新增可选 **`sparge_topk`** 输入（COMBO 下拉框 `0.05`…`1.0`，默认 `0.5`），并提供 `--sparge_topk` CLI 参数；运行时净化到 `(0, 1]`（`1.0` = 计算全部块）。非 `spargeattn` 后端忽略。
-  - **配套改动：** 新增 `--attention_mode` CLI 选项、DiT 加载器下拉选项与可读模式描述；`dit_3b` 与 `dit_7b` 的 attention 模块保持字节一致。
-- **验证：** RTX 5060 Ti（SM120，torch 2.14.1+cu132）GPU 实测：混合窗口变长调用（256 + 64 token）—— SpargeAttn 窗口返回量化输出，不足 128 的窗口与 SDPA 完全一致（cos 1.000000）；通过真实 DiT 注意力模块端到端验证 `FlashAttentionVarlen(attention_mode='spargeattn')`。
-
-Fork 发行历史。
-
 ## v1.5.7 — 2026-09-30
 - **摘要：** DiT 执行显存瞬时峰值抑制与激活中间张量显存稳定性优化：
   - **SDPA 输出缓冲区预分配：** 在 `pytorch_varlen_attention` 中彻底废除 Python 列表切片暂存与最终 `torch.cat()` 拼接机制，改为单一输出缓冲区预分配并在切片视图上就地写入，杜绝注意力输出 2 倍显存瞬时膨胀与冗余 CPU-GPU 同步。

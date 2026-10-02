@@ -15,17 +15,6 @@ Fork release history.
   - **VRAM Savings:** ~0.85 GiB at 1080p/73f, ~1.68 GiB at 1080p/145f, ~3.37 GiB at 1088p/289f.
   - **Verification:** PSNR 84–85 dB vs FP32 feather, stable across 15+ repeats at 512px/1024px.
 
-## Unreleased
-- **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq) for the DiT:
-  - **Two-Stage Block-Sparse Attention:** Integrates the [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork (`spas_sage_hswq_attn` v1.0.0) — two-stage block-sparse filtering on SageAttention2++ quantized kernels (QK INT8 + PV FP8) via `spas_sage2_attn_meansim_topk_cuda` (the "SpargeAttn+Sage2" combination from the paper's kernel benchmarks).
-  - **Varlen-Aware Per-Window Execution:** Implemented `call_sparge_attn_varlen` in `src/optimization/compatibility.py`, mirroring `pytorch_varlen_attention`'s per-window loop over `cu_seqlens` for the packed vid+txt sequences (MSA and Swin-window attention paths).
-  - **Per-Window Constraint Fallbacks:** Windows shorter than 128 tokens or with headdim outside 64/128 fall back to exact SDPA per window (SeedVR2 head_dim is 128; short windows occur at small input resolutions).
-  - **Availability & Fallback Chain:** `validate_attention_mode` resolves `spargeattn` → `sageattn_2` → `sdpa` when the `spas_sage_hswq_attn` package is missing. Prebuilt Windows wheels: [https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ](https://huggingface.co/ussoewwin/Sage-Attention-and-Sparge-Attention-HSWQ).
-  - **Configurable topK:** New optional **`sparge_topk`** input (COMBO dropdown `0.05`…`1.0`, default `0.5`) on the DiT loader node plus `--sparge_topk` CLI flag; sanitized to `(0, 1]` at run time (`1.0` = compute all blocks). Ignored by non-`spargeattn` backends.
-  - **Plumbing:** `--attention_mode` CLI choice, DiT loader combo option, and human-readable mode description added; `dit_3b` and `dit_7b` attention modules kept byte-identical.
-- **Verification:** GPU-tested on RTX 5060 Ti (SM120, torch 2.14.1+cu132): mixed-window varlen call (256 + 64 tokens) — SpargeAttn window returns quantized output, sub-128 window matches SDPA exactly (cos 1.000000); `FlashAttentionVarlen(attention_mode='spargeattn')` exercised end-to-end through the real DiT attention module.
-
-
 ## v1.5.7 — 2026-09-30
 - **Summary:** DiT execution VRAM spike mitigation and activation memory stabilization:
   - **SDPA Output Buffer Pre-allocation:** Replaced slice accumulation in a Python list and final `torch.cat()` with a single pre-allocated output buffer and direct slice writes, eliminating the 2x VRAM duplication spike and unnecessary CPU-GPU synchronizations in `pytorch_varlen_attention`.
