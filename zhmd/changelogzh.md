@@ -8,7 +8,10 @@
 # 更新日志
 
 ## v1.5.9 — 2026-10-02
-- **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）。
+- **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）：
+  - **两阶段块稀疏注意力：** 集成 [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork（`spas_sage_hswq_attn` v1.0.0）—— 在 SageAttention2++ 量化内核（QK INT8 + PV FP8）上实现两阶段块稀疏过滤。
+  - **感知变长的逐窗口执行：** `src/optimization/compatibility.py` 新增 `call_sparge_attn_varlen`，按 `cu_seqlens` 逐窗口循环处理 vid+txt 拼接序列（MSA 与 Swin 窗口路径）；窗口不足 128 token 或 headdim 不在 64/128 时回退到精确 SDPA。
+  - **可用性与配置：** 缺少依赖包时 `validate_attention_mode` 按 `spargeattn` → `sageattn_2` → `sdpa` 解析；DiT 加载器节点新增可选 **`sparge_topk`** 输入（默认 `0.5`），并提供 `--sparge_topk` CLI 参数。
 - **技术详情：** 请参阅 [v1.5.9 发行说明](v1.5.9.md) 获取完整说明
 
 ## v1.5.8 — 2026-10-02

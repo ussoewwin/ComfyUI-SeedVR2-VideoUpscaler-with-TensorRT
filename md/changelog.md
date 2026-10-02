@@ -10,7 +10,10 @@
 Fork release history.
 
 ## v1.5.9 — 2026-10-02
-- **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq).
+- **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq) for the DiT:
+  - **Two-Stage Block-Sparse Attention:** Integrates the [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork (`spas_sage_hswq_attn` v1.0.0) — two-stage block-sparse filtering on SageAttention2++ quantized kernels (QK INT8 + PV FP8).
+  - **Varlen-Aware Per-Window Execution:** `call_sparge_attn_varlen` in `src/optimization/compatibility.py` loops per window over `cu_seqlens` for the packed vid+txt sequences (MSA and Swin-window paths); windows shorter than 128 tokens or headdim outside 64/128 fall back to exact SDPA.
+  - **Availability & Config:** `validate_attention_mode` resolves `spargeattn` → `sageattn_2` → `sdpa` when the package is missing; new optional **`sparge_topk`** input (default `0.5`) on the DiT loader node plus `--sparge_topk` CLI flag.
 - **Technical Details:** See [v1.5.9 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.9) for complete explanation
 
 ## v1.5.8 — 2026-10-02
