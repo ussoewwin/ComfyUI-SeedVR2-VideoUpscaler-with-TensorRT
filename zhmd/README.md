@@ -62,6 +62,27 @@
 3. 点击 **Queue Prompt** 启动构建，系统将在后台自动完成 ONNX 导出与 TensorRT 引擎构建。
 4. 构建完成后重启 ComfyUI，**`SeedVR2 Load TensorRT VAE Decoder`** 节点的 `engine_frames` 下拉列表中将显示新构建的帧数，即可开启极速解码。
 
+
+### SeedVR2 (Down)Load DiT Model with Distorch2 节点
+
+![SeedVR2 (Down)Load DiT Model with Distorch2 节点](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/distorch2.png)
+
+**`SeedVR2 (Down)Load DiT Model with Distorch2`** 节点将整个（量化）DiT 常驻于系统内存，并在去噪时按需流式传输到计算设备，使用内置的 DisTorch2 后端（来自 `ComfyUI-MultiGPU` / `pollockjj`，GPL-3.0）。其 DiT 输出类型（`SEEDVR2_DIT`）与标准加载器完全一致，因此可同样连接到 **`SeedVR2 Video Upscaler`** 节点。
+
+#### 节点参数与设置
+
+- **`model`**：DiT 检查点（如 `seedvr2_7b_int8_convrot.safetensors`）。支持量化（INT8 / NVFP4）与 FP16 检查点。
+- **`device`**：DiT 推理的计算设备。
+- **`attention_mode`** / **`sparge_topk`**：注意力后端与 SpargeAttn KV 保留比例（与标准加载器相同）。
+- **`distorch2_enabled`**：启用 DisTorch2 放置。关闭时行为等同标准加载器。
+- **`virtual_vram_gb`**：在计算设备上为流式传输预留的虚拟 VRAM 预算（GB）。`0` = 整个模型保留在 donor（默认放置）。
+- **`donor_device`**：物理承载打包 DiT 权重的设备（通常为 `cpu` = 系统内存）。
+- **`expert_mode_allocations`**：高级逐块设备分配字符串，如 `"cpu,cpu,cuda:0"`。留空 = 由 `device` / `virtual_vram_gb` 推导放置。
+- **`eject_models`**：放置前卸载其他常驻模型以释放 VRAM（建议开启）。
+- **`emb_repeat_nocache`**：禁用 Phase 2 的 `emb_repeat` 缓存。开启则每次重算（节省常驻 VRAM；输出逐位相同）。
+- **`norm_bf16`**：Phase 2 的 RMS/QK norm 精度。关闭 = 传统 fp32 路径（质量优先）。开启 = bf16 norm 路径（节省常驻 VRAM；输出与 fp32 路径不同）。
+
+节点会在控制台报告最终放置结果（`[MultiGPU DisTorch V2] ... Final Allocation String` 及逐设备的层分布表）。
 ## 文档
 
 详细说明请参阅官方仓库：
@@ -96,3 +117,23 @@ https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 本仓库中的代码按 Apache 2.0 许可证发布，详见 [LICENSE](../LICENSE) 文件。
 
 TensorRT VAE 后端受 [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio) 启发，该后端同样采用 Apache 2.0 许可证发布。依照 Apache 2.0 的要求，保留相应的署名与版权声明。
+
+### DisTorch2 后端（取自 ComfyUI-MultiGPU）
+
+**`SeedVR2 (Down)Load DiT Model with Distorch2`** 节点使用的 DisTorch2 后端，是
+[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU)（作者 **pollockjj**，亦以
+`comfyui-multigpu` 分发）的逐字副本。被复制的文件位于 `src/distorch2/`
+（`distorch_2.py`、`wrappers.py`、`device_utils.py`、`model_management_mgpu.py`），
+与上游源码逐字节一致；`src/core/distorch2_placement.py` 是本仓库自有的桥接层，
+负责将 SeedVR2 DiT 接入该后端。
+
+**许可关系（重要）。** `ComfyUI-MultiGPU` 以 **GNU General Public License v3.0（GPL-3.0）**
+发布，而本仓库其余部分以 **Apache 2.0** 发布。GPL-3.0 是copyleft（传染性）许可。
+由于 DisTorch2 后端在此以逐字副本形式再分发，GPL-3.0 的义务附着于这些被复制的文件：
+其源码在此提供，上游版权与许可声明在各复制文件中完整保留，任何再分发或修改
+`src/distorch2/` 的一方均须遵守 GPL-3.0。若不需要 DisTorch2 加载器节点，可一并移除
+`src/distorch2/`、`SeedVR2LoadDiTModelDisTorch2` 节点及 `distorch2_placement` 桥接层，
+从而完全避免该 GPL-3.0 组件。
+
+DisTorch2 实现的所有功劳归于上游作者；原始项目及其完整许可文本见
+[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU)。

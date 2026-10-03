@@ -62,6 +62,28 @@ Built engines land in `tensorrt_backend/artifacts/` and automatically populate t
 3. Click **Queue Prompt** to run the build. The node executes ONNX export and TensorRT compilation in the background.
 4. Once completed, restart ComfyUI. The newly built engine frame size will appear in the `engine_frames` list of the **`SeedVR2 Load TensorRT VAE Decoder`** node.
 
+
+### SeedVR2 (Down)Load DiT Model with Distorch2 Node
+
+![SeedVR2 (Down)Load DiT Model with Distorch2 Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/distorch2.png)
+
+The **`SeedVR2 (Down)Load DiT Model with Distorch2`** node hosts the entire (quantized) DiT in system RAM and streams it to the compute device during denoising, using the vendored DisTorch2 backend (from `ComfyUI-MultiGPU` / `pollockjj`, GPL-3.0). It keeps the same DiT output type (`SEEDVR2_DIT`) as the standard loader, so it connects to the **`SeedVR2 Video Upscaler`** node identically.
+
+#### Node Parameters & Settings
+
+- **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4) and FP16 checkpoints are both supported.
+- **`device`**: Compute device for DiT inference.
+- **`attention_mode`** / **`sparge_topk`**: Attention backend and SpargeAttn KV keep ratio (identical to the standard loader).
+- **`distorch2_enabled`**: Enable DisTorch2 placement. When off, behaves like the standard loader.
+- **`virtual_vram_gb`**: Virtual-VRAM budget in GB reserved on the compute device for streaming. `0` = keep the whole model on the donor (default placement).
+- **`donor_device`**: Device that physically hosts the packed DiT weights (typically `cpu` = system RAM).
+- **`expert_mode_allocations`**: Advanced per-block device allocation string, e.g. `"cpu,cpu,cuda:0"`. Empty = derive placement from `device` / `virtual_vram_gb`.
+- **`eject_models`**: Eject other resident models before placement to free VRAM (recommended ON).
+- **`emb_repeat_nocache`**: Disable the `emb_repeat` cache during Phase 2. ON recomputes every use (saves resident VRAM; output bit-identical).
+- **`norm_bf16`**: RMS/QK norm precision during Phase 2. OFF = stock fp32 path (quality-priority). ON = bf16 norm path (saves resident VRAM; output differs from the fp32 path).
+
+The node reports its final placement in the console (`[MultiGPU DisTorch V2] ... Final Allocation String` and the per-device layer distribution table).
+
 ## Documentation
 
 For details, refer to the official repository:
@@ -96,3 +118,26 @@ The TensorRT VAE encode/decode engine in this repository was inspired by [VRGDG-
 The code in this repository is released under the Apache 2.0 license as found in the [LICENSE](LICENSE) file.
 
 The TensorRT VAE backend is inspired by [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio), which is also released under the Apache 2.0 license. Attribution and copyright notices are retained in accordance with Apache 2.0 requirements.
+
+### DisTorch2 backend (vendored from ComfyUI-MultiGPU)
+
+The **`SeedVR2 (Down)Load DiT Model with Distorch2`** node uses a DisTorch2 backend that is a
+verbatim copy of [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) by
+**pollockjj** (also distributed as `comfyui-multigpu`). The copied files live in
+`src/distorch2/` (`distorch_2.py`, `wrappers.py`, `device_utils.py`, `model_management_mgpu.py`)
+and are byte-for-byte identical to the upstream sources; `src/core/distorch2_placement.py` is
+this repository's own bridge that feeds the SeedVR2 DiT into that backend.
+
+**License relationship (important).** `ComfyUI-MultiGPU` is released under the
+**GNU General Public License v3.0 (GPL-3.0)**, whereas the rest of this repository is released
+under the **Apache 2.0** license. GPL-3.0 is a copyleft license. Because the DisTorch2 backend is
+redistributed here as a verbatim copy, the GPL-3.0 obligations attach to those copied files:
+their source is provided here, the upstream copyright and license notices are retained in full in
+each copied file, and any party redistributing or modifying `src/distorch2/` must comply with
+GPL-3.0. Users who do not need the DisTorch2 loader node may remove `src/distorch2/` together with
+the `SeedVR2LoadDiTModelDisTorch2` node and the `distorch2_placement` bridge to avoid the
+GPL-3.0 component entirely.
+
+All credit for the DisTorch2 implementation belongs to the upstream author(s); see
+[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) for the original project and its
+full license text.

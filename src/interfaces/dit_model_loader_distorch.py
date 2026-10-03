@@ -80,7 +80,7 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
 
         return io.Schema(
             node_id="SeedVR2LoadDiTModelDisTorch2",
-            display_name="SeedVR2 (Down)Load DiT Model",
+        display_name="SeedVR2 (Down)Load DiT Model with Distorch2",
             category="SEEDVR2",
             description=(
                 "Load and configure SeedVR2 DiT (Diffusion Transformer) model for video upscaling, "
@@ -105,53 +105,6 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
                     options=devices,
                     default=devices[0],
                     tooltip="GPU device for DiT model inference (upscaling phase)"
-                ),
-                io.Int.Input("blocks_to_swap",
-                    default=0,
-                    min=0,
-                    max=36,
-                    step=1,
-                    optional=True,
-                    tooltip=(
-                        "Number of transformer blocks to swap between devices for VRAM optimization.\n"
-                        "? 0: Disabled (default)\n"
-                        "? 3B model: 0-32 blocks\n"
-                        "? 7B model: 0-36 blocks\n"
-                        "\n"
-                        "Requires offload_device to be set and different from device.\n"
-                        "Not available on macOS (unified memory architecture)."
-                    )
-                ),
-                io.Boolean.Input("swap_io_components",
-                    default=False,
-                    optional=True,
-                    tooltip=(
-                        "Offload input/output embeddings and normalization layers to reduce VRAM.\n"
-                        "Requires offload_device to be set and different from device.\n"
-                        "Not available on macOS (unified memory architecture)."
-                    )
-                ),
-                io.Combo.Input("offload_device",
-                    options=get_device_list(include_none=True, include_cpu=True),
-                    default="none",
-                    optional=True,
-                    tooltip=(
-                        "Device to offload DiT model when not actively processing.\n"
-                        "? 'none': Keep model on inference device (default, fastest)\n"
-                        "? 'cpu': Offload to system RAM (reduces VRAM usage)\n"
-                        "? 'cuda:X': Offload to another GPU (good balance if available)\n"
-                        "\n"
-                        "Required for BlockSwap (blocks_to_swap or swap_io_components)."
-                    )
-                ),
-                io.Boolean.Input("cache_model",
-                    default=False,
-                    optional=True,
-                    tooltip=(
-                        "Keep DiT model loaded on offload_device between workflow runs.\n"
-                        "Useful for batch processing to avoid repeated loading.\n"
-                        "Requires offload_device to be set."
-                    )
                 ),
                 io.Combo.Input("attention_mode",
                     options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3", "spargeattn"],
@@ -231,7 +184,7 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
                     tooltip=(
                         "DisTorch2 expert-mode block allocation string (advanced).\n"
                         "Comma-separated per-block device assignments, e.g. \"cpu,cpu,cuda:0\".\n"
-                        "Empty = derive placement from device / offload_device.\n"
+                        "Empty = derive placement from device / virtual_vram_gb.\n"
                         "Only used when distorch2_enabled=True."
                     )
                 ),
@@ -275,9 +228,8 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, model: str, device: str, offload_device: str = "none",
-                     cache_model: bool = False, blocks_to_swap: int = 0,
-                     swap_io_components: bool = False, attention_mode: str = "sdpa", sparge_topk: str = "0.5",
+    def execute(cls, model: str, device: str,
+                     attention_mode: str = "sdpa", sparge_topk: str = "0.5",
                      torch_compile_args: Dict[str, Any] = None,
                      distorch2_enabled: bool = True, virtual_vram_gb: float = 4.0,
                      donor_device: str = "cpu", expert_mode_allocations: str = "",
@@ -291,13 +243,6 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
         is set, the copied DisTorch2 backend is registered and a ``distorch2``
         block with the placement controls is added to the returned config.
         """
-        if cache_model and offload_device == "none":
-            raise ValueError(
-                "Model caching (cache_model=True) requires offload_device to be set. "
-                f"Current: offload_device='{offload_device}'. "
-                "Please set offload_device to specify where the cached DiT model should be stored "
-                "(e.g., 'cpu' or another device). Set cache_model=False if you don't want to cache the model."
-            )
 
         allocation_string = build_distorch2_allocation_string(
             compute_device=device,
@@ -332,10 +277,6 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
         config = {
             "model": model,
             "device": device,
-            "offload_device": offload_device,
-            "cache_model": cache_model,
-            "blocks_to_swap": blocks_to_swap,
-            "swap_io_components": swap_io_components,
             "attention_mode": attention_mode,
             "sparge_topk": sparge_topk,
             "torch_compile_args": torch_compile_args,
