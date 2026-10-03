@@ -113,28 +113,31 @@ Special thanks to our community contributors including [naxci1](https://github.c
 
 The TensorRT VAE encode/decode engine in this repository was inspired by [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio) (Apache 2.0). I had considered porting the DiT to TensorRT, but gave up due to the many difficulties involved and instead focused on improving performance by creating a ComfyUI node that supports ConvRot INT8/NVFP4 quantized models. The idea of porting the VAE encode/decode to TensorRT, however, came from this project — without that work, this approach would never have been conceived. Sincere respect and gratitude to the original author.
 
-## 📜 License
-
-The code in this repository is released under the Apache 2.0 license as found in the [LICENSE](LICENSE) file.
-
-The TensorRT VAE backend is inspired by [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio), which is also released under the Apache 2.0 license. Attribution and copyright notices are retained in accordance with Apache 2.0 requirements.
-
-### DisTorch2 backend (vendored from ComfyUI-MultiGPU)
+### DisTorch2 backend
 
 The **`SeedVR2 (Down)Load DiT Model with Distorch2`** node uses a DisTorch2 backend that is a
 verbatim copy of [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) by
-**pollockjj** (also distributed as `comfyui-multigpu`). The copied files live in
-`src/distorch2/` (`distorch_2.py`, `wrappers.py`, `device_utils.py`, `model_management_mgpu.py`)
-and are byte-for-byte identical to the upstream sources; `src/core/distorch2_placement.py` is
-this repository's own bridge that feeds the SeedVR2 DiT into that backend.
+**pollockjj** (also distributed as `comfyui-multigpu`). The copied files live in `src/distorch2/`
+(`distorch_2.py`, `wrappers.py`, `device_utils.py`, `model_management_mgpu.py`) and are
+byte-for-byte identical to the upstream sources; `src/core/distorch2_placement.py` is this
+repository's own bridge that feeds the SeedVR2 DiT into that backend. All credit for the DisTorch2
+implementation belongs to the upstream author(s); see
+[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) for the original project.
 
-**License relationship (important).** `ComfyUI-MultiGPU` is released under the
-**GNU General Public License v3.0 (GPL-3.0)**, whereas the rest of this repository is released
-under the **Apache 2.0** license. GPL-3.0 is a copyleft license. Because the DisTorch2 backend is
-redistributed here as a verbatim copy, the GPL-3.0 obligations attach to those copied files:
-their source is provided here, the upstream copyright and license notices are retained in full in
-each copied file, and any party redistributing or modifying `src/distorch2/` must comply with
-GPL-3.0. 
-All credit for the DisTorch2 implementation belongs to the upstream author(s); see
-[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) for the original project and its
-full license text.
+## 📜 License
+
+The code in this repository is released under the **Apache 2.0** license, as found in the
+[LICENSE](LICENSE) file.
+
+The TensorRT VAE backend is inspired by
+[VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio),
+which is also released under the Apache 2.0 license. Attribution and copyright notices are
+retained in accordance with Apache 2.0 requirements.
+
+**DisTorch2 backend (GPL-3.0 notice).** The vendored DisTorch2 backend under `src/distorch2/` is a
+verbatim copy of [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU), which is
+released under the **GNU General Public License v3.0 (GPL-3.0)**, whereas the rest of this
+repository is under **Apache 2.0**. GPL-3.0 is a copyleft license: the GPL-3.0 obligations attach
+to those copied files — their source is provided here, the upstream copyright and license
+notices are retained in full in each copied file, and any party redistributing or modifying
+`src/distorch2/` must comply with GPL-3.0.

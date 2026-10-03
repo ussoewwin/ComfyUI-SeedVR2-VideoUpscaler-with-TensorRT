@@ -112,25 +112,28 @@ https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 
 本仓库中的 TensorRT VAE 编码/解码引擎受到 [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio)（Apache 2.0）的启发。我曾考虑将 DiT 移植到 TensorRT，但由于困难重重而放弃，转而通过创建支持 ConvRot INT8/NVFP4 量化模型的 ComfyUI 节点来提升性能。不过，将 VAE 编码/解码移植到 TensorRT 的构想正是来自该项目——没有这项工作，这一方案根本不会诞生。向原作者致以诚挚的敬意与感谢。
 
-## 📜 许可证
-
-本仓库中的代码按 Apache 2.0 许可证发布，详见 [LICENSE](../LICENSE) 文件。
-
-TensorRT VAE 后端受 [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio) 启发，该后端同样采用 Apache 2.0 许可证发布。依照 Apache 2.0 的要求，保留相应的署名与版权声明。
-
-### DisTorch2 后端（取自 ComfyUI-MultiGPU）
+### DisTorch2 后端
 
 **`SeedVR2 (Down)Load DiT Model with Distorch2`** 节点使用的 DisTorch2 后端，是
 [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU)（作者 **pollockjj**，亦以
 `comfyui-multigpu` 分发）的逐字副本。被复制的文件位于 `src/distorch2/`
 （`distorch_2.py`、`wrappers.py`、`device_utils.py`、`model_management_mgpu.py`），
 与上游源码逐字节一致；`src/core/distorch2_placement.py` 是本仓库自有的桥接层，
-负责将 SeedVR2 DiT 接入该后端。
+负责将 SeedVR2 DiT 接入该后端。DisTorch2 实现的所有功劳归于上游作者；
+原始项目见 [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU)。
 
-**许可关系（重要）。** `ComfyUI-MultiGPU` 以 **GNU General Public License v3.0（GPL-3.0）**
-发布，而本仓库其余部分以 **Apache 2.0** 发布。GPL-3.0 是copyleft（传染性）许可。
-由于 DisTorch2 后端在此以逐字副本形式再分发，GPL-3.0 的义务附着于这些被复制的文件：
-其源码在此提供，上游版权与许可声明在各复制文件中完整保留，任何再分发或修改
-`src/distorch2/` 的一方均须遵守 GPL-3.0。
-DisTorch2 实现的所有功劳归于上游作者；原始项目及其完整许可文本见
-[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU)。
+## 📜 许可协议
+
+本仓库的代码以 **Apache 2.0** 许可协议发布，详见
+[LICENSE](../LICENSE) 文件。
+
+TensorRT VAE 后端受
+[VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgamegirl19/VRGDG-SeedVR2-TensorRT-Studio)
+启发，该项目同样以 Apache 2.0 许可协议发布。依照 Apache 2.0 要求保留署名与版权声明。
+
+**DisTorch2 后端（GPL-3.0 声明）。** `src/distorch2/` 下的 DisTorch2 后端是
+[ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) 的逐字副本，后者以
+**GNU General Public License v3.0（GPL-3.0）** 发布，而本仓库其余部分为
+**Apache 2.0**。GPL-3.0 是 copyleft（传染性）许可：GPL-3.0 的义务附着于这些被复制的文件
+——其源码在此提供，上游版权与许可声明在各复制文件中完整保留，
+任何再分发或修改 `src/distorch2/` 的一方均须遵守 GPL-3.0。
