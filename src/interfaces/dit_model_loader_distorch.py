@@ -256,6 +256,16 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
                         "Only used when distorch2_enabled=True."
                     )
                 ),
+                io.Boolean.Input("norm_bf16",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "RMS/QK norm precision during DiT upscaling (Phase 2).\n"
+                        "ON = run norm in bf16: saves significant resident VRAM in Phase 2, but output differs from the fp32 path (per-pixel PSNR ~37-39 dB vs fp32).\n"
+                        "OFF = stock fp32 path (quality-priority; default).\n"
+                        "Only used when distorch2_enabled=True."
+                    )
+                ),
             ],
             outputs=[
                 io.Custom("SEEDVR2_DIT").Output(
@@ -272,7 +282,8 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
                      distorch2_enabled: bool = True, virtual_vram_gb: float = 4.0,
                      donor_device: str = "cpu", expert_mode_allocations: str = "",
                      eject_models: bool = True,
-                     emb_repeat_nocache: bool = False) -> io.NodeOutput:
+                     emb_repeat_nocache: bool = False,
+                     norm_bf16: bool = False) -> io.NodeOutput:
         """
         Create a DiT model configuration for the SeedVR2 main node.
 
@@ -311,6 +322,7 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
             "expert_mode_allocations": str(expert_mode_allocations or ""),
             "eject_models": bool(eject_models),
             "emb_repeat_nocache": bool(emb_repeat_nocache),
+            "norm_bf16": bool(norm_bf16),
             "allocation_string": allocation_string,
             "backend_ready": backend_ready,
             "preserve_quantized_storage": True,

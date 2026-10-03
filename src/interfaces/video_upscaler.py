@@ -487,6 +487,11 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 os.environ["SEEDVR2_EMB_REPEAT_NOCACHE"] = "1"
             else:
                 os.environ.pop("SEEDVR2_EMB_REPEAT_NOCACHE", None)
+            # norm bf16 switch（per-node）→ 模???境?量
+            if bool(_d2cfg.get("norm_bf16", False)):
+                os.environ["SEEDVR2_NORM_BF16"] = "1"
+            else:
+                os.environ.pop("SEEDVR2_NORM_BF16", None)
 
             # Separate TRT flags: encode and decode must not force each other
             # (e.g. TRT decoder + FP16 encoder must keep the encoder on the FP16 path).

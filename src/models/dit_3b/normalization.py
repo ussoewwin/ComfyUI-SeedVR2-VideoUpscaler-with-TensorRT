@@ -20,6 +20,7 @@ import torch.nn.functional as F
 import numbers
 from torch.nn.parameter import Parameter
 from torch.nn import init
+import os as _os
 
 # (dim: int, eps: float, elementwise_affine: bool)
 norm_layer_type = Callable[[int, float, bool], nn.Module]
@@ -89,22 +90,26 @@ class CustomRMSNorm(nn.Module):
         # RMS normalization: x / sqrt(mean(x^2) + eps) * weight
         dims = tuple(range(-len(self.normalized_shape), 0))
         
-        # Calculate RMS: sqrt(mean(x^2))
+        # _SEEDVR2_NORM_BF16_SWITCH: env SEEDVR2_NORM_BF16=1 -> bf16 path (VRAM-saving),
+        # otherwise the stock fp32 path (quality-priority).
+        if _os.environ.get("SEEDVR2_NORM_BF16") == "1":
+            variance = torch.mean(input * input, dim=dims, keepdim=True, dtype=input.dtype)
+            rms = torch.sqrt(variance + self.eps)
+            normalized = input / rms
+            if self.elementwise_affine:
+                w = self.weight
+                if w.dtype != input.dtype:
+                    w = w.to(input.dtype)
+                return normalized * w
+            return normalized
         variance = input.pow(2).mean(dim=dims, keepdim=True)
         rms = torch.sqrt(variance + self.eps)
-        
-        # Normalize
         normalized = input / rms
-        
         if self.elementwise_affine:
-            # Convert FP8 weight to match input dtype for arithmetic operations
-            if hasattr(torch, 'float8_e4m3fn'):
+            if hasattr(torch, "float8_e4m3fn"):
                 fp8_types = (torch.float8_e4m3fn, torch.float8_e5m2)
                 if self.weight.dtype in fp8_types:
-                    # Use input dtype as target (respects pipeline precision)
-                    weight = self.weight.to(input.dtype)
-                    return normalized * weight
-                    
+                    return normalized * self.weight.to(input.dtype)
             return normalized * self.weight
         return normalized
 
