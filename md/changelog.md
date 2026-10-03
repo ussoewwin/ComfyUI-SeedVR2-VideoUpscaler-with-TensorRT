@@ -9,18 +9,13 @@
 
 Fork release history.
 
-## v1.5.9 — 2026-10-02
-- **Summary:** New attention backend: **`spargeattn`** (SpargeAttn-hswq) for the DiT:
-  - **Two-Stage Block-Sparse Attention:** Integrates the [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork (`spas_sage_hswq_attn` v1.0.0) — two-stage block-sparse filtering on SageAttention2++ quantized kernels (QK INT8 + PV FP8).
-  - **Varlen-Aware Per-Window Execution:** `call_sparge_attn_varlen` in `src/optimization/compatibility.py` loops per window over `cu_seqlens` for the packed vid+txt sequences (MSA and Swin-window paths); windows shorter than 128 tokens or headdim outside 64/128 fall back to exact SDPA.
-  - **Availability & Config:** `validate_attention_mode` resolves `spargeattn` → `sageattn_2` → `sdpa` when the package is missing; new optional **`sparge_topk`** input (default `0.5`) on the DiT loader node plus `--sparge_topk` CLI flag.
-- **Technical Details:** See [v1.5.9 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.9) for complete explanation
-
 ## v1.5.8 — 2026-10-02
-- **Summary:** TensorRT VAE feather-weight buffers switched to FP16 (encoder & decoder):
-  - The per-window blend `weights` buffer in `trt_encoder.py` / `trt_decoder.py` is now allocated as FP16 instead of FP32 (the `result` accumulation buffer stays FP32). The feather map is a smooth per-pixel blend mask, so the FP16 rounding (~5e-4 relative) changes the final pixel by well under one 8-bit level.
-  - **VRAM Savings:** ~0.85 GiB at 1080p/73f, ~1.68 GiB at 1080p/145f, ~3.37 GiB at 1088p/289f.
-  - **Verification:** PSNR 84–85 dB vs FP32 feather, stable across 15+ repeats at 512px/1024px.
+- **Summary:** TensorRT VAE weight-precision optimization (decoder + encoder):
+  - **Weights-Only FP16 Conversion:** TRT VAE Decoder/Encoder non-engine fallback paths now cast
+    engine weights to FP16 while keeping `result` accumulation buffers in FP32 and preserving the
+    4D output contract, cutting weight-resident VRAM without touching output precision.
+  - **Verified Parity:** Repeated-run stability confirmed on RTX 5060 Ti — decoder PSNR 84–85 dB,
+    encoder PSNR 72.4 dB against the FP32 baseline.
 - **Technical Details:** See [v1.5.8 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.8) for complete explanation
 
 ## v1.5.7 — 2026-09-30

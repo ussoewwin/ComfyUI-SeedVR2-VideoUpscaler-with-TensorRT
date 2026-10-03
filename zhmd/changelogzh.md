@@ -7,19 +7,13 @@
 
 # 更新日志
 
-## v1.5.9 — 2026-10-02
-- **摘要：** DiT 新增注意力后端 **`spargeattn`**（SpargeAttn-hswq）：
-  - **两阶段块稀疏注意力：** 集成 [`SpargeAttn-hswq`](https://github.com/ussoewwin/SpargeAttn-hswq) fork（`spas_sage_hswq_attn` v1.0.0）—— 在 SageAttention2++ 量化内核（QK INT8 + PV FP8）上实现两阶段块稀疏过滤。
-  - **感知变长的逐窗口执行：** `src/optimization/compatibility.py` 新增 `call_sparge_attn_varlen`，按 `cu_seqlens` 逐窗口循环处理 vid+txt 拼接序列（MSA 与 Swin 窗口路径）；窗口不足 128 token 或 headdim 不在 64/128 时回退到精确 SDPA。
-  - **可用性与配置：** 缺少依赖包时 `validate_attention_mode` 按 `spargeattn` → `sageattn_2` → `sdpa` 解析；DiT 加载器节点新增可选 **`sparge_topk`** 输入（默认 `0.5`），并提供 `--sparge_topk` CLI 参数。
-- **技术详情：** 请参阅 [v1.5.9 发行说明](v1.5.9.md) 获取完整说明
-
 ## v1.5.8 — 2026-10-02
-- **摘要：** TensorRT VAE 羽化权重缓冲区改为 FP16（编码器与解码器）：
-  - `weights` 缓冲区由 FP32 改为 FP16 分配（`result` 保持 FP32）。
-  - **显存节省：** 1080p/73f 约 0.85 GiB，1080p/145f 约 1.68 GiB，1088p/289f 约 3.37 GiB。
-  - **验证：** PSNR 84–85 dB，15 次以上重复稳定。
-- **技术详情：** 请参阅 [v1.5.8 发行说明](v1.5.8.md) 获取完整说明
+- **摘要：** TensorRT VAE 权重精度优化（解码器 + 编码器）：
+  - **仅权重 FP16 转换：** TRT VAE Decoder/Encoder 非引擎回退路径现将引擎权重转换为 FP16，
+    `result` 累积缓冲区保持 FP32 并保留 4D 输出契约，在不影响输出精度的前提下削减权重常驻显存。
+  - **验证一致性：** 在 RTX 5060 Ti 上确认多次运行稳定 — 解码器 PSNR 84–85 dB，
+    编码器 PSNR 72.4 dB（对比 FP32 基准）。
+- **技术详情：** 参见 [v1.5.8 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.8) 获取完整说明
 
 ## v1.5.7 — 2026-09-30
 - **摘要：** DiT 执行显存瞬时峰值抑制与激活中间张量显存稳定性优化：
@@ -43,7 +37,6 @@
   - **确定性显存深度清理：** 全流程应用三阶段内存回收，消除显存碎片堆积。
   - **TensorRT VAE 编码器重构：** 移植 v1.5.4 伪影与显存修复基盘、短批次 Pad & Crop 极速单次执行、彻底移除静默降级，并引入对称的 `SeedVR2LoadTensorRTVAEEncoder` 节点。
 - **技术详情：** 请参阅 [v1.5.5 发行说明](v1.5.5.md) 获取完整说明
-
 
 ## v1.5.4 — 2026-09-27
 - **摘要：** 彻底修复横屏视频下 TensorRT VAE 解码器左上角马赛克/棋盘格伪影问题，且零显存膨胀：

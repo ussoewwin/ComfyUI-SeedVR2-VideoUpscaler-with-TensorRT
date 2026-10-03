@@ -486,7 +486,20 @@ def prepare_model_structure(
     # so load_state_dict hits _load_quantized_module (not post-load Linear replace).
     create_kwargs = {}
     if is_dit:
-        ops = _dit_comfy_quant_ops(checkpoint_path, torch.float16)
+        # compute_dtype MUST come from the runner's pipeline compute dtype.
+        # Hardcoding float16 here is the original defect: it forced every
+        # non-quantized DiT param to fp16 and tagged QuantizedTensor logical
+        # dtype as fp16, so comfy cast_bias_weight dequantized (fp16-expanded)
+        # weights whenever activations were bf16. Quantized DiT => no fp16.
+        _compute_dtype_override = getattr(runner, '_compute_dtype', None)
+        if _compute_dtype_override is None and getattr(runner, 'config', None) is not None:
+            _dtype_str = getattr(getattr(runner.config, 'dit', None), 'dtype', None)
+            if _dtype_str:
+                _compute_dtype_override = getattr(torch, str(_dtype_str), None)
+        if _compute_dtype_override is None:
+            _compute_dtype_override = torch.bfloat16
+        runner._dit_compute_dtype_override = _compute_dtype_override
+        ops = _dit_comfy_quant_ops(checkpoint_path, _compute_dtype_override)
         if ops is not None:
             create_kwargs["operations"] = ops
             fmt = "NVFP4" if checkpoint_is_nvfp4(checkpoint_path) else "INT8"
@@ -506,6 +519,7 @@ def prepare_model_structure(
         runner.dit = model
         runner._dit_checkpoint = checkpoint_path
         runner._dit_block_swap_config = block_swap_config
+        runner._dit_distorch2 = getattr(runner, '_dit_distorch2', None)
         runner._dit_comfy_quant_native = bool(create_kwargs)
     else:
         runner.vae = model  
@@ -575,6 +589,35 @@ def materialize_model(runner: VideoDiffusionInfer, model_type: str, device: torc
     model = _load_model_weights(model, checkpoint_path, target_device, True,
                                model_type_upper, offload_reason, debug, override_dtype) 
    
+    # DisTorch2 placement (DiT only): host a whole quantized (INT8/NVFP4) DiT in
+    # system RAM per the upstream comfyui-multigpu allocation string, then stream
+    # per-block during forward. Applied BEFORE BlockSwap/compile wiring.
+    if is_dit:
+        _d2 = getattr(runner, '_dit_distorch2', None)
+        if _d2 and _d2.get('enabled'):
+            try:
+                from .distorch2_placement import apply_distorch2_placement
+                apply_distorch2_placement(
+                    model,
+                    _d2.get('allocation_string', ''),
+                    debug,
+                    virtual_vram_gb=float(_d2.get('virtual_vram_gb', 0.0) or 0.0),
+                    donor_device=str(_d2.get('donor_device', 'cpu')),
+                    compute_device=str(getattr(runner, '_dit_device', device) or device),
+                    blockswap_active=bool(
+                        block_swap_config and (
+                            block_swap_config.get("blocks_to_swap", 0) > 0
+                            or block_swap_config.get("swap_io_components", False)
+                        )
+                    ),
+                )
+            except Exception as _e:
+                debug.log(
+                    f"DisTorch2 placement failed: {_e}", level="ERROR",
+                    category="dit", force=True,
+                )
+                raise
+
     # Apply model-specific configurations (includes BlockSwap and torch.compile)
     # Import here to avoid circular dependency 
     from .model_configuration import apply_model_specific_config

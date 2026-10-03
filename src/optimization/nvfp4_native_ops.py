@@ -50,6 +50,26 @@ def checkpoint_is_nvfp4(checkpoint_path: Optional[str]) -> bool:
     return False
 
 
+def _mark_dit_locked(o):
+    """Wrap an ops.Linear so quantized weights get flagged as locked.
+
+    The flag stops comfy_kitchen.QuantizedTensor from silently fp16-expanding
+    the weight on any unimplemented op (see base.py). Only INT8/NVFP4 packed
+    weights (int8/uint8 storage) opt in; VAE and other models never do.
+    """
+    import torch as _t
+    class _LockedLinear(o):
+        def forward(self, input, *args, **kwargs):
+            w = getattr(self, 'weight', None)
+            try:
+                d = getattr(w, '_qdata', None)
+                if d is not None and getattr(d, 'dtype', None) in (_t.int8, _t.uint8):
+                    w._dit_quant_locked = True
+            except Exception:
+                pass
+            return super().forward(input, *args, **kwargs)
+    return _LockedLinear
+
 def get_nvfp4_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> Any:
     """
     Return ``comfy.ops.mixed_precision_ops`` for NVFP4 DiT loads.
@@ -100,5 +120,5 @@ def get_nvfp4_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) ->
                 input = input.to(dtype=_act_dtype)
             return super().forward(input, *args, **kwargs)
 
-    ops.Linear = Linear
+    ops.Linear = _mark_dit_locked(Linear)
     return ops

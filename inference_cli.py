@@ -971,6 +971,24 @@ def _process_frames_core(
         torch_compile_args_vae=torch_compile_args_vae
     )
     
+    # DisTorch2 placement config (from CLI flags)
+    if getattr(args, 'distorch2', False):
+        _vram_str = f"{args.distorch2_virtual_vram_gb}" if args.distorch2_virtual_vram_gb and args.distorch2_virtual_vram_gb > 0 else ""
+        _alloc = (args.distorch2_allocation + '#' + ctx['dit_device'].__str__() if args.distorch2_allocation else '')
+        if not _alloc and _vram_str:
+            _alloc = f"#{ctx['dit_device']};{args.distorch2_virtual_vram_gb};{args.distorch2_donor}"
+        runner._dit_distorch2 = {
+            'enabled': True,
+            'virtual_vram_gb': float(args.distorch2_virtual_vram_gb or 0.0),
+            'donor_device': args.distorch2_donor,
+            'expert_mode_allocations': args.distorch2_allocation,
+            'eject_models': False,
+            'allocation_string': _alloc,
+            'backend_ready': True,
+            'preserve_quantized_storage': True,
+            'model_is_quantized': ('int8' in args.dit_model.lower() or 'nvfp4' in args.dit_model.lower()),
+        }
+        debug.log(f"DisTorch2 enabled: allocation='{_alloc}'", category="dit", force=True)
     ctx['cache_context'] = cache_context
     if runner_cache is not None:
         runner_cache['runner'] = runner
@@ -1443,6 +1461,14 @@ Examples:
     device_group.add_argument("--dit_offload_device", type=str, default="none",
                         help="DiT offload device when idle: 'none' (keep on GPU), 'cpu' (offload to RAM), or GPU ID. "
                              "Frees VRAM between phases. Required for BlockSwap. Default: none")
+    device_group.add_argument("--distorch2", action="store_true",
+                        help="Enable DisTorch2 placement for the DiT (host the quantized DiT in system RAM per the comfyui-multigpu allocation string).")
+    device_group.add_argument("--distorch2_virtual_vram_gb", type=float, default=4.0,
+                        help="DisTorch2 virtual VRAM budget (GiB) reported to the allocator (default: 4.0).")
+    device_group.add_argument("--distorch2_donor", type=str, default="cpu",
+                        help="DisTorch2 donor device holding the weights ('cpu' or 'cuda:X'). Default: cpu")
+    device_group.add_argument("--distorch2_allocation", type=str, default="",
+                        help="DisTorch2 expert-mode allocation string (advanced; empty = derive from virtual_vram_gb/donor).")
     device_group.add_argument("--vae_offload_device", type=str, default="none",
                         help="VAE offload device when idle: 'none', 'cpu', or GPU ID. Frees VRAM between phases. Default: none")
     device_group.add_argument("--tensor_offload_device", type=str, default="cpu",

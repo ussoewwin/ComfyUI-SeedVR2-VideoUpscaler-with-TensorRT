@@ -7,6 +7,7 @@ from comfy_api.latest import ComfyExtension, io
 
 from .video_upscaler import SeedVR2VideoUpscaler
 from .dit_model_loader import SeedVR2LoadDiTModel
+from .dit_model_loader_distorch import SeedVR2LoadDiTModelDisTorch2
 from .vae_model_loader import SeedVR2LoadVAEModel
 from .torch_compile_settings import SeedVR2TorchCompileSettings
 from .trt_vae_builder import SeedVR2BuildTensorRTVAE
@@ -26,6 +27,7 @@ class SeedVR2Extension(ComfyExtension):
         return [
             SeedVR2VideoUpscaler,
             SeedVR2LoadDiTModel,
+            SeedVR2LoadDiTModelDisTorch2,
             SeedVR2LoadVAEModel,
             SeedVR2TorchCompileSettings,
             SeedVR2BuildTensorRTVAE,
@@ -43,6 +45,7 @@ async def comfy_entrypoint() -> ComfyExtension:
 __all__ = [
     'SeedVR2VideoUpscaler',
     'SeedVR2LoadDiTModel',
+    'SeedVR2LoadDiTModelDisTorch2',
     'SeedVR2LoadVAEModel',
     'SeedVR2TorchCompileSettings',
     'SeedVR2BuildTensorRTVAE',
@@ -52,4 +55,4 @@ __all__ = [
     'SeedVR2SaveVideo',
     'SeedVR2Extension',
     'comfy_entrypoint',
-]
+]

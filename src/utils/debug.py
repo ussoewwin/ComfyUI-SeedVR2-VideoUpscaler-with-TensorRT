@@ -157,10 +157,10 @@ class Debug:
         self.log("███████║███████╗███████╗██████╔╝ ╚████╔╝ ██║  ██║    ███████╗  ██╗ ███████║", category="none", force=True, indent_level=1)
         self.log("╚══════╝╚══════╝╚══════╝╚═════╝   ╚═══╝  ╚═╝  ╚═╝    ╚══════╝  ╚═╝ ╚══════╝", category="none", force=True, indent_level=1)
         # Version and credits - left/right aligned to logo width
-        version_text = f"v{__version__}"
+        version_text = "ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT"
         cli_indicator = "💻 CLI · " if cli else ""
         left_part = f"{cli_indicator}{version_text}"
-        right_part = "© ByteDance Seed · NumZ · AInVFX"
+        right_part = "© ByteDance Seed · NumZ · AInVFX · UssoEwwin"
         logo_width = 75
         emoji_compensation = 1 if cli else 0
         padding = logo_width - len(left_part) - len(right_part) - emoji_compensation

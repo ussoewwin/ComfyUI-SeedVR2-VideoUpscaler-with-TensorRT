@@ -3,6 +3,7 @@ SeedVR2 Video Upscaler Node
 Main ComfyUI node for high-quality video upscaling using diffusion models
 """
 
+import os
 import torch
 from comfy_api.latest import io
 from typing import Tuple, Dict, Any, Optional
@@ -477,6 +478,16 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 torch_compile_args_dit=dit_torch_compile_args,
                 torch_compile_args_vae=vae_torch_compile_args
             )
+            # DisTorch2 placement config from the (DisTorch2) DiT loader node.
+            # Consumed by model_loader.materialize_model before BlockSwap wiring.
+            runner._dit_distorch2 = dit.get("distorch2")
+            # emb_repeat cache disable switch（per-node）→ 模块级环境变量
+            _d2cfg = dit.get("distorch2") or {}
+            if bool(_d2cfg.get("emb_repeat_nocache", False)):
+                os.environ["SEEDVR2_EMB_REPEAT_NOCACHE"] = "1"
+            else:
+                os.environ.pop("SEEDVR2_EMB_REPEAT_NOCACHE", None)
+
             # Separate TRT flags: encode and decode must not force each other
             # (e.g. TRT decoder + FP16 encoder must keep the encoder on the FP16 path).
             runner.use_tensorrt_vae_encode = bool(

@@ -72,13 +72,22 @@ class AdaSingle(nn.Module):
         emb = expand_dims(emb, 1, hid.ndim + 1)
 
         if hid_len is not None:
-            emb = cache(
-                f"emb_repeat_{idx}_{branch_tag}",
-                lambda: slice_inputs(
+            import os as _os
+            if _os.environ.get("SEEDVR2_EMB_REPEAT_NOCACHE") == "1":
+                # 省常驻显存（~1.0 GiB）: 绕过 emb_repeat 缓存，每次重算。
+                # repeat_interleave 是纯拷贝运算，重算与缓存值 bit 级一致，输出不变。
+                emb = slice_inputs(
                     torch.repeat_interleave(emb, hid_len, dim=0),
                     dim=0,
-                ),
-            )
+                )
+            else:
+                emb = cache(
+                    f"emb_repeat_{idx}_{branch_tag}",
+                    lambda: slice_inputs(
+                        torch.repeat_interleave(emb, hid_len, dim=0),
+                        dim=0,
+                    ),
+                )
 
         shiftA, scaleA, gateA = emb.unbind(-1)
         shiftB, scaleB, gateB = (

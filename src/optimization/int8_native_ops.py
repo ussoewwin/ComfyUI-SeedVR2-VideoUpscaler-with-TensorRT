@@ -49,6 +49,27 @@ def checkpoint_is_hswq_int8(checkpoint_path: Optional[str]) -> bool:
     return False
 
 
+def _mark_dit_locked(o):
+    """Wrap an ops.Linear so quantized weights get flagged as locked.
+
+    The flag stops comfy_kitchen.QuantizedTensor from silently fp16-expanding
+    the weight on any unimplemented op (see base.py). Only INT8/NVFP4 packed
+    weights (int8/uint8 storage) opt in; VAE and other models never do.
+    """
+    import torch as _t
+    class _LockedLinear(o):
+        def forward(self, input, *args, **kwargs):
+            w = getattr(self, 'weight', None)
+            try:
+                d = getattr(w, '_qdata', None)
+                if d is not None and getattr(d, 'dtype', None) in (_t.int8, _t.uint8):
+                    w._dit_quant_locked = True
+            except Exception:
+                pass
+            return super().forward(input, *args, **kwargs)
+    return _LockedLinear
+
+
 def get_hswq_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> Any:
     """
     Return ``comfy.ops.mixed_precision_ops`` with empty quant_config.
@@ -58,12 +79,14 @@ def get_hswq_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
     """
     import comfy.ops as comfy_ops
 
-    return comfy_ops.mixed_precision_ops(
+    ops = comfy_ops.mixed_precision_ops(
         quant_config={},
         compute_dtype=compute_dtype,
         full_precision_mm=False,
         disabled=[],
     )
+    ops.Linear = _mark_dit_locked(ops.Linear)
+    return ops
 
 
 def resolve_linear_ops(operations: Optional[Any] = None) -> Any:
