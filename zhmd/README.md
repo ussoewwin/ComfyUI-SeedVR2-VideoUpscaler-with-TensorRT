@@ -131,9 +131,6 @@ TensorRT VAE 后端受 [VRGDG-SeedVR2-TensorRT-Studio](https://github.com/vrgame
 发布，而本仓库其余部分以 **Apache 2.0** 发布。GPL-3.0 是copyleft（传染性）许可。
 由于 DisTorch2 后端在此以逐字副本形式再分发，GPL-3.0 的义务附着于这些被复制的文件：
 其源码在此提供，上游版权与许可声明在各复制文件中完整保留，任何再分发或修改
-`src/distorch2/` 的一方均须遵守 GPL-3.0。若不需要 DisTorch2 加载器节点，可一并移除
-`src/distorch2/`、`SeedVR2LoadDiTModelDisTorch2` 节点及 `distorch2_placement` 桥接层，
-从而完全避免该 GPL-3.0 组件。
-
+`src/distorch2/` 的一方均须遵守 GPL-3.0。
 DisTorch2 实现的所有功劳归于上游作者；原始项目及其完整许可文本见
 [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU)。

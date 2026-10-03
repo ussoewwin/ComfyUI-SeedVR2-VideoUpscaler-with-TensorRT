@@ -134,10 +134,7 @@ under the **Apache 2.0** license. GPL-3.0 is a copyleft license. Because the Dis
 redistributed here as a verbatim copy, the GPL-3.0 obligations attach to those copied files:
 their source is provided here, the upstream copyright and license notices are retained in full in
 each copied file, and any party redistributing or modifying `src/distorch2/` must comply with
-GPL-3.0. Users who do not need the DisTorch2 loader node may remove `src/distorch2/` together with
-the `SeedVR2LoadDiTModelDisTorch2` node and the `distorch2_placement` bridge to avoid the
-GPL-3.0 component entirely.
-
+GPL-3.0. 
 All credit for the DisTorch2 implementation belongs to the upstream author(s); see
 [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) for the original project and its
 full license text.
