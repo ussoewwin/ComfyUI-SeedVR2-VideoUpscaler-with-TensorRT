@@ -7,6 +7,22 @@
 
 # Changelog
 
+## v1.6.0 — 2026-10-03
+- **Summary:** New DisTorch2 DiT loader node and Phase 2 VRAM controls:
+  - **SeedVR2 (Down)Load DiT Model with Distorch2:** New node that hosts the entire (quantized) DiT
+    in system RAM and streams it to the compute device during denoising, using a vendored DisTorch2
+    backend (verbatim copy of ComfyUI-MultiGPU by pollockjj, GPL-3.0; see the Credits/License
+    sections). Adds virtual-VRAM budget, donor device, per-block allocation string, and model-eject
+    controls, with the same `SEEDVR2_DIT` output type as the standard loader.
+  - **norm_bf16 toggle:** New per-node switch for RMS/QK norm precision during Phase 2.
+    OFF (default) = stock fp32 path, bit-identical output. ON = bf16 norm path, saving resident
+    VRAM at the cost of bf16 rounding (per-pixel PSNR ~37–39 dB vs fp32).
+  - **emb_repeat_nocache toggle:** Disable the emb_repeat cache during Phase 2 (recompute each use;
+    saves resident VRAM; output bit-identical).
+  - **Model registry:** Removed the fp8 DiT entries (3B / 7B / 7B sharp); default DiT is now
+    `seedvr2_7b_int8_convrot.safetensors`.
+- **Technical Details:** See [v1.6.0 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.0) for complete explanation
+
 Fork release history.
 
 ## v1.5.8 — 2026-10-02

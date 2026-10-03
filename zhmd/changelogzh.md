@@ -7,6 +7,22 @@
 
 # 更新日志
 
+## v1.6.0 — 2026-10-03
+- **摘要：** 新增 DisTorch2 DiT 加载器节点与 Phase 2 显存控制：
+  - **SeedVR2 (Down)Load DiT Model with Distorch2：** 新节点，将整个（量化）DiT 常驻于系统内存，
+    并在去噪时按需流式传输到计算设备，使用内置的 DisTorch2 后端
+    （ComfyUI-MultiGPU（pollockjj）的逐字副本，GPL-3.0；详见 Credits/License 节）。
+    新增虚拟 VRAM 预算、donor 设备、逐块分配字符串与模型卸载控制，
+    输出类型与标准加载器同为 `SEEDVR2_DIT`。
+  - **norm_bf16 开关：** 新增逐节点开关，用于 Phase 2 的 RMS/QK norm 精度。
+    关闭（默认）= 传统 fp32 路径，输出逐位相同。
+    开启 = bf16 norm 路径，节省常驻显存，代价是 bf16 舍入（逐像素 PSNR 约 37–39 dB vs fp32）。
+  - **emb_repeat_nocache 开关：** 禁用 Phase 2 的 emb_repeat 缓存（每次重算；
+    节省常驻显存；输出逐位相同）。
+  - **模型注册表：** 移除 fp8 DiT 条目（3B / 7B / 7B sharp）；
+    默认 DiT 现为 `seedvr2_7b_int8_convrot.safetensors`。
+- **技术详情：** 参见 [v1.6.0 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.0) 获取完整说明
+
 ## v1.5.8 — 2026-10-02
 - **摘要：** TensorRT VAE 权重精度优化（解码器 + 编码器）：
   - **仅权重 FP16 转换：** TRT VAE Decoder/Encoder 非引擎回退路径现将引擎权重转换为 FP16，
