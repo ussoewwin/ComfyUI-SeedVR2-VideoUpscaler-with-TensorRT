@@ -654,109 +654,32 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
     cu_k_cpu = cu_seqlens_k.long().cpu()
     num_seqs = len(cu_q_cpu) - 1
 
-    # Sanitize topk once (same contract as the stock wrapper)
-    try:
-        _topk = float(sparge_topk)
-    except (TypeError, ValueError):
-        _topk = 0.5
-    if not (_topk > 0.0) or _topk > 1.0:
-        _topk = 0.5
-
-    # Split windows: those the sparse kernel can run (>=128, headdim 64/128) vs SDPA fallback.
-    sdpa_idx = []
-    sparse_idx = []
-    for i in range(num_seqs):
-        seq_len_i = int(cu_q_cpu[i + 1]) - int(cu_q_cpu[i])
-        headdim_i = q.size(-1)
-        if seq_len_i < 128 or headdim_i not in (64, 128):
-            sdpa_idx.append(i)
-        else:
-            sparse_idx.append(i)
-
     output = torch.empty_like(q)
-
-    # SDPA fallback windows (unchanged contract, logged by caller if needed)
-    for i in sdpa_idx:
+    for i in range(num_seqs):
         q_start, q_end = int(cu_q_cpu[i]), int(cu_q_cpu[i + 1])
         k_start, k_end = int(cu_k_cpu[i]), int(cu_k_cpu[i + 1])
-        q_i = q[q_start:q_end].permute(1, 0, 2).unsqueeze(0)
+        q_i = q[q_start:q_end].permute(1, 0, 2).unsqueeze(0)  # (1, H, S, D)
         k_i = k[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
         v_i = v[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
-        out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
-        output[q_start:q_end] = out_i.squeeze(0).permute(1, 0, 2)
 
-    if sparse_idx:
-        # _SEEDVR2_SPARGE_BATCHED_MAP:
-        # Stock path recomputed the Stage-1/2 block map (and re-quantized q/k/v) inside
-        # spas_sage2_attn_meansim_topk_cuda for every window. That fixed cost dominates
-        # when there are many windows (measured 6.7x overhead vs a single batched map
-        # call at B=81). Here the block map is computed ONCE for all equal-length
-        # windows in a single batched kernel, then the Stage-3 sparse kernel is driven
-        # per window with the precomputed LUT. Output is bit-identical to stock
-        # (verified max_diff=0.0), and equal-length windows are the norm for this
-        # node (NA windowing); mixed lengths fall back per-window to stock below.
-        from spas_sage_hswq_attn.core import get_block_map_meansim_fuse_quant, _get_arch
-        from spas_sage_hswq_attn import _fused as _fused_mod
-        import spas_sage_hswq_attn.core as _spas_core
-
-        # Group sparse windows by length so we can batch each length-group in one call
-        groups = {}
-        for i in sparse_idx:
-            L = int(cu_q_cpu[i + 1]) - int(cu_q_cpu[i])
-            groups.setdefault(L, []).append(i)
-
-        H = q.size(-2)
-        D = q.size(-1)
-        scale = 1.0 / (D ** 0.5)
-        pv = torch.full((H,), 50.0, dtype=torch.float32, device=q.device)
-
-
-        for L, idxs in groups.items():
-            # Stack windows: (n, H, L, D)
-            # equal-length windows: build (n, H, L, D) views without copying (fallback to stack if ragged)
-            _w = len(idxs)
-            # Build (n, H, L, D) by stacking per-window slices. q/k/v are laid out as
-            # (total_seq, H, D); a plain view(_w, L, H, D) is invalid (and windows can be
-            # ragged), so always stack. Each window's (L_i, H, D) slice is permuted to
-            # (H, L_i, D) so the stack yields (n, H, L, D) (requires equal L here, which
-            # holds within a length-group).
-            q_g = torch.stack([q[int(cu_q_cpu[i]):int(cu_q_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
-            k_g = torch.stack([k[int(cu_k_cpu[i]):int(cu_k_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
-            v_g = torch.stack([v[int(cu_k_cpu[i]):int(cu_k_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
-
-            lut, vbn, qi, qs, ki, ks = get_block_map_meansim_fuse_quant(
-                q_g, k_g, None, is_causal=is_causal, simthreshd1=-0.1, cdfthreshd=None,
-                topk=_topk, return_lut=True, attention_sink=False, BLKQ=128, BLKK=64)
-
-            # v fp8 quantization once for the whole group (same recipe as stock)
-            b_, h_kv, kv_len, head_dim = v_g.shape
-            padded_len = (kv_len + 127) // 128 * 128
-            v_tp = torch.empty((b_, h_kv, head_dim, padded_len), dtype=v_g.dtype, device=v_g.device)
-            _fused_mod.transpose_pad_permute_cuda(v_g.contiguous(), v_tp, 1)
-            v_fp8 = torch.empty(v_tp.shape, dtype=torch.float8_e4m3fn, device=v_g.device)
-            v_scale = torch.empty((b_, h_kv, head_dim), dtype=torch.float32, device=v_g.device)
-            _fused_mod.scale_fuse_quant_cuda(v_tp, v_fp8, v_scale, kv_len, 2.25, 1)
-
-            arch = _get_arch(v_g.device)
-            o = torch.empty((len(idxs), H, L, D), dtype=torch.float16, device=q.device)
-            # _SEEDVR2_SPARGE_ACCUMF16: prefer the SageAttention2++ fp16-accumulate kernel
-            # when it is compiled in (SAGE2PP_ENABLED). Falls back to f32 accumulate.
-            _use_f16 = bool(getattr(_spas_core, "SAGE2PP_ENABLED", False)) and hasattr(
-                _spas_core.qattn,
-                "qk_int8_sv_f8_accum_f16_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold",
+        seq_len = q_i.size(-2)
+        headdim = q_i.size(-1)
+        if seq_len < 128 or headdim not in (64, 128):
+            out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
+        else:
+            try:
+                _topk = float(sparge_topk)
+            except (TypeError, ValueError):
+                _topk = 0.5
+            if not (_topk > 0.0) or _topk > 1.0:
+                _topk = 0.5
+            out_i = spas_sage2_attn_meansim_topk_cuda(
+                q_i, k_i, v_i,
+                topk=_topk,
+                is_causal=is_causal,
+                tensor_layout="HND",
             )
-            if _use_f16:
-                _spas_core.qattn.qk_int8_sv_f8_accum_f16_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold(
-                    qi, ki, v_fp8, o, lut, vbn, pv,
-                    qs, ks, v_scale, 1, 0, 1, scale, 0)
-            else:
-                _spas_core.qattn.qk_int8_sv_f8_accum_f32_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold(
-                    qi, ki, v_fp8, o, lut, vbn, pv,
-                    qs, ks, v_scale, 1, 0, 1, scale, 0)
-            # write back windows (per-window, safe for ragged groups)
-            for n_idx, i in enumerate(idxs):
-                q_start, q_end = int(cu_q_cpu[i]), int(cu_q_cpu[i + 1])
-                output[q_start:q_end] = o[n_idx].permute(1, 0, 2).to(out_dtype)
+        output[q_start:q_end] = out_i.squeeze(0).permute(1, 0, 2)
 
     return output.to(out_dtype) if output.dtype != out_dtype else output
 
