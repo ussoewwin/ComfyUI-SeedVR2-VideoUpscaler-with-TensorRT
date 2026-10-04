@@ -44,6 +44,7 @@ from .alpha_upscaling import process_alpha_for_batch
 from .infer import VideoDiffusionInfer
 from ..common.seed import set_seed
 from ..optimization.nvfp4_native_ops import checkpoint_is_nvfp4
+from ..optimization.w4a8_native_ops import checkpoint_is_w4a8
 from ..optimization.memory_manager import (
     cleanup_dit,
     cleanup_vae,
@@ -790,10 +791,14 @@ def upscale_all_batches(
                 bool(getattr(runner, "_dit_comfy_quant_native", False))
                 and checkpoint_is_nvfp4(getattr(runner, "_dit_checkpoint", None))
             )
+            w4a8_native = (
+                bool(getattr(runner, "_dit_comfy_quant_native", False))
+                and checkpoint_is_w4a8(getattr(runner, "_dit_checkpoint", None))
+            )
             debug.start_timer(f"dit_inference_{upscale_idx+1}")
             with torch.no_grad():
                 use_autocast = (
-                    not nvfp4_native
+                    not (nvfp4_native or w4a8_native)
                     and dit_dtype != ctx['compute_dtype']
                     and ctx['dit_device'].type != 'mps'
                 )

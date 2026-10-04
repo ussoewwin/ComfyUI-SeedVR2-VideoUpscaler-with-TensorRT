@@ -44,6 +44,7 @@ MODEL_REGISTRY = {
     # HSWQ INT8 (int8_tensorwise + ConvRot) — native INT8 inference target (VRAM-saving path)
     "seedvr2_7b_int8_convrot.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="int8_tensorwise_convrot", sha256="5aa0d25fc9d35e449b659d0c9a5dcb22e2a4fa04032101b95a39da42b32c1be6"),
     "seedvr2_7b_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="nvfp4", sha256="cc4af1a7bd5377066496f393555478323e806fa21163bdbe3409451aface9b93"),
+    "seedvr2_7b_w4a8.safetensors": ModelInfo(size="7B", precision="asym_w4a8_int8"),
     
     # 7B sharp variants
     "seedvr2_ema_7b_sharp_fp16.safetensors": ModelInfo(size="7B", precision="fp16", variant="sharp", sha256="20a93e01ff24beaeebc5de4e4e5be924359606c356c9c51509fba245bd2d77dd"),

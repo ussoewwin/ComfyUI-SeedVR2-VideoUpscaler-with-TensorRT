@@ -72,6 +72,11 @@ from ..optimization.nvfp4_native_ops import (
     checkpoint_is_nvfp4,
     get_nvfp4_mixed_precision_ops,
 )
+from ..optimization.w4a8_native_ops import (
+    checkpoint_is_w4a8,
+    get_w4a8_mixed_precision_ops,
+    prepare_w4a8_state_dict_for_comfy_ops,
+)
 from ..optimization.compatibility import (
     GGUF_AVAILABLE,
     GGMLQuantizationType,
@@ -83,12 +88,14 @@ def _dit_comfy_quant_ops(checkpoint_path: Optional[str], compute_dtype: torch.dt
     """
     Construction-time comfy.ops for DiT packs that use comfy_quant markers.
 
-    INT8 (int8_tensorwise) and NVFP4 share the same injection requirement:
+    INT8 (int8_tensorwise), NVFP4, and W4A8 share the same injection requirement:
     mixed_precision Linear must exist before load_state_dict so
     _load_quantized_module keeps QuantizedTensor (VRAM savings).
     """
     if not checkpoint_path or str(checkpoint_path).endswith(".gguf"):
         return None
+    if checkpoint_is_w4a8(checkpoint_path):
+        return get_w4a8_mixed_precision_ops(compute_dtype)
     if checkpoint_is_nvfp4(checkpoint_path):
         return get_nvfp4_mixed_precision_ops(compute_dtype)
     if checkpoint_is_hswq_int8(checkpoint_path):
@@ -99,7 +106,11 @@ def _dit_comfy_quant_ops(checkpoint_path: Optional[str], compute_dtype: torch.dt
 def _dit_needs_comfy_quant_prep(checkpoint_path: Optional[str]) -> bool:
     if not checkpoint_path or str(checkpoint_path).endswith(".gguf"):
         return False
-    return checkpoint_is_nvfp4(checkpoint_path) or checkpoint_is_hswq_int8(checkpoint_path)
+    return (
+        checkpoint_is_w4a8(checkpoint_path)
+        or checkpoint_is_nvfp4(checkpoint_path)
+        or checkpoint_is_hswq_int8(checkpoint_path)
+    )
 
 # GGUF-specific imports (only when available)
 if GGUF_AVAILABLE:
@@ -502,7 +513,12 @@ def prepare_model_structure(
         ops = _dit_comfy_quant_ops(checkpoint_path, _compute_dtype_override)
         if ops is not None:
             create_kwargs["operations"] = ops
-            fmt = "NVFP4" if checkpoint_is_nvfp4(checkpoint_path) else "INT8"
+            if checkpoint_is_w4a8(checkpoint_path):
+                fmt = "W4A8"
+            elif checkpoint_is_nvfp4(checkpoint_path):
+                fmt = "NVFP4"
+            else:
+                fmt = "INT8"
             debug.log(
                 f"{fmt} detected: injecting comfy.ops.mixed_precision_ops at DiT construction",
                 category=model_type,
@@ -671,13 +687,20 @@ def _load_model_weights(model: torch.nn.Module, checkpoint_path: str, target_dev
     state = load_quantized_state_dict(checkpoint_path, target_device, debug)
     debug.end_timer(f"{model_type_lower}_weights_load", f"{model_type} weights loaded from file")
 
-    # INT8 / NVFP4: comfy.ops parses comfy_quant via .numpy() (CPU only), and
+    # INT8 / NVFP4 / W4A8: comfy.ops parses comfy_quant via .numpy() (CPU only), and
     # meta-built mixed_precision Linear needs factory_kwargs["device"] set to
     # the materialization target so QuantizedTensor is not left on meta.
     if model_type_lower == "dit" and _dit_needs_comfy_quant_prep(checkpoint_path):
-        prepare_hswq_state_dict_for_comfy_ops(state)
+        if checkpoint_is_w4a8(checkpoint_path):
+            prepare_w4a8_state_dict_for_comfy_ops(state)
+            fmt = "W4A8"
+        elif checkpoint_is_nvfp4(checkpoint_path):
+            prepare_hswq_state_dict_for_comfy_ops(state)
+            fmt = "NVFP4"
+        else:
+            prepare_hswq_state_dict_for_comfy_ops(state)
+            fmt = "INT8"
         n_patch = patch_ops_factory_device(model, target_device)
-        fmt = "NVFP4" if checkpoint_is_nvfp4(checkpoint_path) else "INT8"
         debug.log(
             f"{fmt} load prep: comfy_quant→CPU, factory_kwargs device={target_device} "
             f"({n_patch} modules)",
