@@ -715,14 +715,14 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
             # Stack windows: (n, H, L, D)
             # equal-length windows: build (n, H, L, D) views without copying (fallback to stack if ragged)
             _w = len(idxs)
-            try:
-                q_g = q.view(_w, L, H, D).permute(0, 2, 1, 3)
-                k_g = k.view(_w, L, H, D).permute(0, 2, 1, 3)
-                v_g = v.view(_w, L, H, D).permute(0, 2, 1, 3)
-            except Exception:
-                q_g = torch.stack([q[int(cu_q_cpu[i]):int(cu_q_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
-                k_g = torch.stack([k[int(cu_k_cpu[i]):int(cu_k_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
-                v_g = torch.stack([v[int(cu_k_cpu[i]):int(cu_k_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
+            # Build (n, H, L, D) by stacking per-window slices. q/k/v are laid out as
+            # (total_seq, H, D); a plain view(_w, L, H, D) is invalid (and windows can be
+            # ragged), so always stack. Each window's (L_i, H, D) slice is permuted to
+            # (H, L_i, D) so the stack yields (n, H, L, D) (requires equal L here, which
+            # holds within a length-group).
+            q_g = torch.stack([q[int(cu_q_cpu[i]):int(cu_q_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
+            k_g = torch.stack([k[int(cu_k_cpu[i]):int(cu_k_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
+            v_g = torch.stack([v[int(cu_k_cpu[i]):int(cu_k_cpu[i+1])].permute(1, 0, 2) for i in idxs], dim=0)
 
             lut, vbn, qi, qs, ki, ks = get_block_map_meansim_fuse_quant(
                 q_g, k_g, None, is_causal=is_causal, simthreshd1=-0.1, cdfthreshd=None,
@@ -739,12 +739,24 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
 
             arch = _get_arch(v_g.device)
             o = torch.empty((len(idxs), H, L, D), dtype=torch.float16, device=q.device)
-            _spas_core.qattn.qk_int8_sv_f8_accum_f32_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold(
-                qi, ki, v_fp8, o, lut, vbn, pv,
-                qs, ks, v_scale, 1, 0, 1, scale, 0)
-            # write back all windows in one shot (avoids per-window permute copies)
-            _out_view = output.view(_w, L, H, D).permute(0, 2, 1, 3)
-            _out_view.copy_(o.to(out_dtype))
+            # _SEEDVR2_SPARGE_ACCUMF16: prefer the SageAttention2++ fp16-accumulate kernel
+            # when it is compiled in (SAGE2PP_ENABLED). Falls back to f32 accumulate.
+            _use_f16 = bool(getattr(_spas_core, "SAGE2PP_ENABLED", False)) and hasattr(
+                _spas_core.qattn,
+                "qk_int8_sv_f8_accum_f16_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold",
+            )
+            if _use_f16:
+                _spas_core.qattn.qk_int8_sv_f8_accum_f16_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold(
+                    qi, ki, v_fp8, o, lut, vbn, pv,
+                    qs, ks, v_scale, 1, 0, 1, scale, 0)
+            else:
+                _spas_core.qattn.qk_int8_sv_f8_accum_f32_block_sparse_attn_inst_buf_fuse_v_scale_with_pv_threshold(
+                    qi, ki, v_fp8, o, lut, vbn, pv,
+                    qs, ks, v_scale, 1, 0, 1, scale, 0)
+            # write back windows (per-window, safe for ragged groups)
+            for n_idx, i in enumerate(idxs):
+                q_start, q_end = int(cu_q_cpu[i]), int(cu_q_cpu[i + 1])
+                output[q_start:q_end] = o[n_idx].permute(1, 0, 2).to(out_dtype)
 
     return output.to(out_dtype) if output.dtype != out_dtype else output
 
