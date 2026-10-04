@@ -176,11 +176,35 @@ spas_sage2_attn_meansim_topk_varlen_cuda = None
 SPARGE_ATTN_AVAILABLE = False
 
 
+def _ensure_sparge_triton_cache_dir():
+    """Default TRITON_CACHE_DIR so SpargeAttn's Triton kernels are JIT-compiled
+    once and reused across runs instead of being recompiled on every fresh
+    process (~2.5s on the first sparse call). An explicit setting always wins;
+    this only fills the gap when the launcher has not set one.
+    Node-side only: the spas_sage_hswq_attn package is left untouched.
+    """
+    import os as _os
+    if _os.environ.get("TRITON_CACHE_DIR"):
+        return _os.environ["TRITON_CACHE_DIR"]
+    base = _os.environ.get("TORCHINDUCTOR_CACHE_DIR") or _os.environ.get("TORCH_HOME")
+    if base:
+        d = _os.path.join(base, "triton")
+    else:
+        d = _os.path.join(_os.path.expanduser("~"), ".cache", "seedvr2_sparge_triton")
+    try:
+        _os.makedirs(d, exist_ok=True)
+        _os.environ["TRITON_CACHE_DIR"] = d
+        return d
+    except Exception:
+        return None
+
+
 try:
     from spas_sage_hswq_attn import (
         spas_sage2_attn_meansim_topk_cuda as _spas_topk,
         spas_sage2_attn_meansim_topk_nhd_cuda as _spas_nhd,
     )
+    _ensure_sparge_triton_cache_dir()
     spas_sage2_attn_meansim_topk_cuda = _spas_topk
     spas_sage2_attn_meansim_topk_nhd_cuda = _spas_nhd
     try:
@@ -194,6 +218,60 @@ try:
 except (ImportError, AttributeError, OSError):
     pass
 
+
+def release_sparge_kernel_caches(debug=None):
+    """Release SpargeAttn's in-memory kernel resources (call at Phase 2 end).
+
+    The on-disk Triton cache intentionally persists -- it only saves JIT time on
+    the NEXT process start. Everything held in memory/VRAM for this run is
+    dropped here so it cannot leak into Phase 3 or a later run.
+    """
+    released = []
+    # 1) in-memory Triton JIT device caches (compiled binaries, loaded modules)
+    try:
+        from triton.runtime.jit import JITFunction
+        for _fn in list(getattr(JITFunction, "cache", {}).values()):
+            try:
+                _fn.device_caches.clear()
+            except Exception:
+                pass
+        released.append("triton_jit")
+    except Exception:
+        pass
+    # 2) library-side plan/tensor caches owned by the fork
+    try:
+        from spas_sage_hswq_attn import core as _sparge_core
+        for _name in ("_VARLEN_PLAN_CACHE", "_VARLEN_DEV_TENSOR_CACHE"):
+            _c = getattr(_sparge_core, _name, None)
+            if _c is not None:
+                try:
+                    _c.clear()
+                except Exception:
+                    pass
+        released.append("varlen_plan")
+    except Exception:
+        pass
+    # 3) hyperparameter cache
+    try:
+        from spas_sage_hswq_attn.utils import _HYPERPARAM_CACHE
+        _HYPERPARAM_CACHE.clear()
+        released.append("hyperparam")
+    except Exception:
+        pass
+    # 4) return allocator blocks to the driver
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            released.append("cuda_allocator")
+    except Exception:
+        pass
+    if debug is not None:
+        try:
+            debug.log(f"Released SpargeAttn kernel caches: {', '.join(released) or 'none'}",
+                      category="memory", force=True)
+        except Exception:
+            pass
+    return released
 
 SAGE_ATTN_AVAILABLE = SAGE_ATTN_2_AVAILABLE or SAGE_ATTN_3_AVAILABLE
 
