@@ -45,7 +45,6 @@ from .infer import VideoDiffusionInfer
 from ..common.seed import set_seed
 from ..optimization.nvfp4_native_ops import checkpoint_is_nvfp4
 from ..optimization.w4a8_native_ops import checkpoint_is_w4a8
-from ..optimization.compatibility import release_sparge_kernel_caches
 from ..optimization.memory_manager import (
     cleanup_dit,
     cleanup_vae,
@@ -899,15 +898,6 @@ def upscale_all_batches(
         # VAE decoding starts from a clean pool (same retention issue as the
         # Phase 1 -> Phase 2 boundary above).
         clear_memory(debug, timer_name="phase2_end")
-
-        # SpargeAttn's compiled-kernel resources must not outlive Phase 2
-        # (its Triton modules and plan tensors are Phase-2-only). The on-disk
-        # Triton cache stays put; only the in-memory/VRAM copies are dropped.
-        try:
-            release_sparge_kernel_caches(debug)
-        except Exception as _sparge_release_err:
-            debug.log(f"SpargeAttn cache release skipped: {_sparge_release_err}",
-                      category="memory")
     
     debug.end_timer("phase2_upscaling", "Phase 2: DiT upscaling complete", show_breakdown=True)
     debug.log_memory_state("After phase 2 (DiT upscaling)", show_tensors=False)
