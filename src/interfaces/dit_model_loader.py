@@ -101,6 +101,16 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                         "Requires offload_device to be set."
                     )
                 ),
+                io.Boolean.Input("eject_models",
+                    default=True,
+                    optional=True,
+                    tooltip=(
+                        "Mark all currently loaded models for eviction before this DiT loads, "
+                        "freeing maximum VRAM for the upscaling pass.\n"
+                        "ON = unload other resident models (recommended for low-VRAM GPUs).\n"
+                        "OFF = load without eviction."
+                    )
+                ),
                 io.Combo.Input("attention_mode",
                     options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3", "spargeattn"],
                     default="sdpa",
@@ -149,6 +159,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
     def execute(cls, model: str, device: str, offload_device: str = "none",
                      cache_model: bool = False, blocks_to_swap: int = 0, 
                      swap_io_components: bool = False, attention_mode: str = "sdpa", sparge_topk: str = "0.5",
+                     eject_models: bool = True,
                      torch_compile_args: Dict[str, Any] = None) -> io.NodeOutput:
         """
         Create DiT model configuration for SeedVR2 main node
@@ -161,6 +172,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             blocks_to_swap: Number of transformer blocks to swap (requires offload_device != device)
             swap_io_components: Whether to offload I/O components (requires offload_device != device)
             attention_mode: Attention computation backend ('sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3', 'spargeattn', or 'sageattn_3')
+            eject_models: Eject other resident models before this DiT loads (frees VRAM)
             torch_compile_args: Optional torch.compile configuration from settings node
             
         Returns:
@@ -187,6 +199,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             "swap_io_components": swap_io_components,
             "attention_mode": attention_mode,
             "sparge_topk": sparge_topk,
+            "eject_models": bool(eject_models),
             "torch_compile_args": torch_compile_args,
             "node_id": get_executing_context().node_id,
         }
