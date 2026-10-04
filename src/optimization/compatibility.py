@@ -172,22 +172,114 @@ except (ImportError, AttributeError, OSError):
 # 5. SpargeAttn-hswq (block-sparse attention on SageAttention2++ kernels)
 spas_sage2_attn_meansim_topk_cuda = None
 spas_sage2_attn_meansim_topk_nhd_cuda = None
+spas_sage2_attn_meansim_topk_varlen_cuda = None
 SPARGE_ATTN_AVAILABLE = False
+
+
+def _ensure_sparge_triton_cache_dir():
+    """Default TRITON_CACHE_DIR so SpargeAttn's Triton kernels are JIT-compiled
+    once and reused across runs instead of being recompiled on every fresh
+    process (~2.5s on the first sparse call). An explicit setting always wins;
+    this only fills the gap when the launcher has not set one.
+    Node-side only: the spas_sage_hswq_attn package is left untouched.
+    """
+    import os as _os
+    if _os.environ.get("TRITON_CACHE_DIR"):
+        return _os.environ["TRITON_CACHE_DIR"]
+    base = _os.environ.get("TORCHINDUCTOR_CACHE_DIR") or _os.environ.get("TORCH_HOME")
+    if base:
+        d = _os.path.join(base, "triton")
+    else:
+        d = _os.path.join(_os.path.expanduser("~"), ".cache", "seedvr2_sparge_triton")
+    try:
+        _os.makedirs(d, exist_ok=True)
+        _os.environ["TRITON_CACHE_DIR"] = d
+        return d
+    except Exception:
+        return None
+
+
 try:
     from spas_sage_hswq_attn import (
         spas_sage2_attn_meansim_topk_cuda as _spas_topk,
         spas_sage2_attn_meansim_topk_nhd_cuda as _spas_nhd,
     )
+    _ensure_sparge_triton_cache_dir()
     spas_sage2_attn_meansim_topk_cuda = _spas_topk
     spas_sage2_attn_meansim_topk_nhd_cuda = _spas_nhd
+    try:
+        from spas_sage_hswq_attn import (
+            spas_sage2_attn_meansim_topk_varlen_cuda as _spas_varlen,
+        )
+        spas_sage2_attn_meansim_topk_varlen_cuda = _spas_varlen
+    except ImportError:
+        spas_sage2_attn_meansim_topk_varlen_cuda = None
     SPARGE_ATTN_AVAILABLE = True
 except (ImportError, AttributeError, OSError):
     pass
 
+
+def release_sparge_kernel_caches(debug=None):
+    """Release SpargeAttn's in-memory kernel resources (call at Phase 2 end).
+
+    The on-disk Triton cache intentionally persists -- it only saves JIT time on
+    the NEXT process start. Everything held in memory/VRAM for this run is
+    dropped here so it cannot leak into Phase 3 or a later run.
+    """
+    released = []
+    # 1) in-memory Triton JIT device caches (compiled binaries, loaded modules)
+    try:
+        from triton.runtime.jit import JITFunction
+        for _fn in list(getattr(JITFunction, "cache", {}).values()):
+            try:
+                _fn.device_caches.clear()
+            except Exception:
+                pass
+        released.append("triton_jit")
+    except Exception:
+        pass
+    # 2) library-side plan/tensor caches owned by the fork
+    try:
+        from spas_sage_hswq_attn import core as _sparge_core
+        for _name in ("_VARLEN_PLAN_CACHE", "_VARLEN_DEV_TENSOR_CACHE"):
+            _c = getattr(_sparge_core, _name, None)
+            if _c is not None:
+                try:
+                    _c.clear()
+                except Exception:
+                    pass
+        released.append("varlen_plan")
+    except Exception:
+        pass
+    # 3) hyperparameter cache
+    try:
+        from spas_sage_hswq_attn.utils import _HYPERPARAM_CACHE
+        _HYPERPARAM_CACHE.clear()
+        released.append("hyperparam")
+    except Exception:
+        pass
+    # 4) return allocator blocks to the driver
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            released.append("cuda_allocator")
+    except Exception:
+        pass
+    if debug is not None:
+        try:
+            debug.log(f"Released SpargeAttn kernel caches: {', '.join(released) or 'none'}",
+                      category="memory", force=True)
+        except Exception:
+            pass
+    return released
+
 SAGE_ATTN_AVAILABLE = SAGE_ATTN_2_AVAILABLE or SAGE_ATTN_3_AVAILABLE
 
-# __SPARGE_SYNC_FREE__: per-(tensor-id,sizes) plan cache; hit = 0 D2H sync
-_sparge_plan_cache = {}
+# __SPARGE_PROFILE__: CUDA-event per-call timing probe.
+_SPARGE_PROFILE_ENABLED = True
+_sparge_prof_results = {}      # plan_kind -> list[(ev0, ev1)]
+_sparge_prof_shapes = {}       # plan_kind -> first observed shape tuple
+_sparge_prof_calls = [0]
 
 
 def validate_attention_mode(requested_mode: str, debug=None) -> str:
@@ -615,22 +707,13 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
     """
     SpargeAttn-hswq block-sparse attention for packed variable-length sequences.
 
-    Uses spas_sage2_attn_meansim_topk_nhd_cuda (SageAttention2++ INT8 QK / FP8 PV
-    with two-stage block-sparse filtering) directly on zero-copy NHD views.
-
-    Fast Path:
-    - Uniform window lengths: single-launch zero-copy view (batch_size, L, heads, dim),
-      zero D2H sync, zero tensor copies, zero Python slice loops.
-    
-    Fallback / Ragged Path:
-    - Mixed window lengths: groups consecutive runs of equal-length windows and invokes
-      NHD kernels per contiguous slice with single-slice writebacks.
-    - Windows with seq_len < 128 or headdim not in (64, 128) fall back to SDPA.
+    Delegates to the library entry point
+    spas_sage2_attn_meansim_topk_varlen_cuda (fork >= 1.2.1), which supports
+    both the fixed-length (uniform) batched fast path and mixed-length packed
+    sequences internally. Caller-side bucketing is no longer performed here.
     """
     if not SPARGE_ATTN_AVAILABLE:
         raise ImportError("SpargeAttn-hswq is not available")
-
-    from torch.nn.functional import scaled_dot_product_attention as _sdpa
 
     if torch.is_tensor(max_seqlen_q):
         max_seqlen_q = int(max_seqlen_q.item())
@@ -641,6 +724,9 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
 
     # SpargeAttn kernels require fp16/bf16 inputs
     out_dtype = q.dtype
+    if _SPARGE_PROFILE_ENABLED:
+        _ev0, _ev1 = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+        _ev0.record()
     half_dtypes = (torch.float16, torch.bfloat16)
     if not (q.dtype == k.dtype == v.dtype):
         k = k.to(q.dtype)
@@ -661,127 +747,63 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
     headdim = q.size(-1)
     heads = q.size(1)
 
-    # Fast path: plan-cached zero-sync uniform detection (__SPARGE_SYNC_FREE__).
-    # Stock detection runs `(seq == seq[0]).all()` + two `.item()` per call =
-    # 3 D2H syncs x 72 calls/forward; on WDDM each sync busy-waits ~3-7ms, i.e.
-    # seconds per batch. Cache one plan per (queue shape); stale plans cannot
-    # mis-execute: the zero-copy `.view()` below validates B*L against numel
-    # and raises into the except-free ragged path on any mismatch.
-    _cv_key = (int(cu_seqlens_q.shape[0]), int(cu_seqlens_k.shape[0]),
-               int(q.shape[0]), int(k.shape[0]), int(v.shape[0]))
-    plan = _sparge_plan_cache.get(_cv_key)
-    if plan is None:
-        seq_lens_q = cu_seqlens_q[1:] - cu_seqlens_q[:-1]
-        seq_lens_k = cu_seqlens_k[1:] - cu_seqlens_k[:-1]
-        uniform = bool((seq_lens_q == seq_lens_q[0]).all()) and bool(
-            (seq_lens_k == seq_lens_k[0]).all())
-        if uniform:
-            plan = ('uniform', cu_seqlens_q.shape[0] - 1,
-                    int(seq_lens_q[0].item()), int(seq_lens_k[0].item()))
-        else:
-            plan = ('ragged',)
-        # keep the cache tiny: 2 shapes max (uniform + fallback)
-        if len(_sparge_plan_cache) >= 2:
-            _sparge_plan_cache.clear()
-        _sparge_plan_cache[_cv_key] = plan
+    # Variable-length SpargeAttn is handled inside the library
+    # (spas_sage2_attn_meansim_topk_varlen_cuda): it supports BOTH the fixed
+    # (uniform) batched fast path and mixed-length sequences without violating
+    # the kernel's fixed-length premise. The former caller-side bucketing is
+    # gone -- this wrapper only normalizes dtype/layout and records the probe.
+    if spas_sage2_attn_meansim_topk_varlen_cuda is None:
+        raise ImportError("SpargeAttn-hswq varlen API is not available (need fork >= 1.2.1)")
 
-    if plan[0] == 'uniform':
-        batch_size, L_q, L_k = plan[1], plan[2], plan[3]
-        if L_q == L_k and L_q >= 128 and headdim in (64, 128):
-            # 100% Zero-Copy Fast Path: 1 kernel launch, 0 allocations on the
-            # fast path, 0 Python loops, 0 D2H syncs.
-            try:
-                q_view = q.view(batch_size, L_q, heads, headdim)
-                k_view = k.view(batch_size, L_k, heads, headdim)
-                v_view = v.view(batch_size, L_k, heads, headdim)
-            except RuntimeError:
-                # stale plan (lens changed under the same shape key): rebuild
-                _sparge_plan_cache.pop(_cv_key, None)
-            else:
-                if spas_sage2_attn_meansim_topk_nhd_cuda is not None:
-                    out = spas_sage2_attn_meansim_topk_nhd_cuda(
-                        q_view, k_view, v_view,
-                        topk=_topk,
-                        is_causal=is_causal,
-                    )
-                else:
-                    out = spas_sage2_attn_meansim_topk_cuda(
-                        q_view.permute(0, 2, 1, 3).contiguous(),
-                        k_view.permute(0, 2, 1, 3).contiguous(),
-                        v_view.permute(0, 2, 1, 3).contiguous(),
-                        topk=_topk,
-                        is_causal=is_causal,
-                        tensor_layout="HND",
-                    ).permute(0, 2, 1, 3)
+    q_c = q.contiguous() if q.stride(-1) != 1 else q
+    k_c = k.contiguous() if k.stride(-1) != 1 else k
+    v_c = v.contiguous() if v.stride(-1) != 1 else v
 
-                out_flat = out.view(-1, heads, headdim)
-                return out_flat.to(out_dtype) if out_flat.dtype != out_dtype else out_flat
+    out = spas_sage2_attn_meansim_topk_varlen_cuda(
+        q_c, k_c, v_c,
+        cu_seqlens_q, cu_seqlens_k,
+        max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k,
+        is_causal=is_causal,
+        topk=_topk,
+    )
 
-    # Variable-length / mixed sequence lengths:
-    cu_q_cpu = cu_seqlens_q.long().cpu()
-    cu_k_cpu = cu_seqlens_k.long().cpu()
-    num_seqs = len(cu_q_cpu) - 1
+    out_flat = out.view(-1, heads, headdim)
 
-    output = torch.empty_like(q)
+    if _SPARGE_PROFILE_ENABLED:
+        _ev1.record()
+        try:
+            nseq = int(cu_seqlens_q.shape[0]) - 1
+            _tot = int(q.shape[0])
+            _plens = (cu_seqlens_q[1:] - cu_seqlens_q[:-1])
+            _nkind = int(torch.unique(_plens).numel())
+            _pmax = int(_plens.max().item())
+            _pmin = int(_plens.min().item())
+            _sparge_prof_shapes.setdefault('sparge_varlen', (nseq, _tot, _nkind, _pmin, _pmax))
+        except Exception:
+            pass
+        _sparge_prof_results.setdefault('sparge_varlen', []).append((_ev0, _ev1))
+        _sparge_prof_calls[0] += 1
+        if _sparge_prof_calls[0] % 100 == 0:
+            _dump_sparge_profile()
+    return out_flat.to(out_dtype) if out_flat.dtype != out_dtype else out_flat
 
-    # Group consecutive identical windows into contiguous slices
-    # to avoid both per-window loops and torch.cat allocations
-    i = 0
-    while i < num_seqs:
-        L_qi = int(cu_q_cpu[i + 1]) - int(cu_q_cpu[i])
-        L_ki = int(cu_k_cpu[i + 1]) - int(cu_k_cpu[i])
-
-        # Find contiguous run of identical lengths
-        j = i + 1
-        while j < num_seqs:
-            if (int(cu_q_cpu[j + 1]) - int(cu_q_cpu[j]) == L_qi) and (int(cu_k_cpu[j + 1]) - int(cu_k_cpu[j]) == L_ki):
-                j += 1
-            else:
-                break
-
-        n_run = j - i
-        q_start = int(cu_q_cpu[i])
-        q_end = int(cu_q_cpu[j])
-        k_start = int(cu_k_cpu[i])
-        k_end = int(cu_k_cpu[j])
-
-        if L_qi != L_ki or L_qi < 128 or headdim not in (64, 128):
-            # SDPA fallback for short windows or asymmetric Q/K
-            for idx in range(i, j):
-                qs, qe = int(cu_q_cpu[idx]), int(cu_q_cpu[idx + 1])
-                ks, ke = int(cu_k_cpu[idx]), int(cu_k_cpu[idx + 1])
-                q_i = q[qs:qe].permute(1, 0, 2).unsqueeze(0)
-                k_i = k[ks:ke].permute(1, 0, 2).unsqueeze(0)
-                v_i = v[ks:ke].permute(1, 0, 2).unsqueeze(0)
-                out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
-                output[qs:qe] = out_i.squeeze(0).permute(1, 0, 2)
-        else:
-            # Contiguous slice execution (zero-copy view directly into q)
-            q_run = q[q_start:q_end].view(n_run, L_qi, heads, headdim)
-            k_run = k[k_start:k_end].view(n_run, L_ki, heads, headdim)
-            v_run = v[k_start:k_end].view(n_run, L_ki, heads, headdim)
-
-            if spas_sage2_attn_meansim_topk_nhd_cuda is not None:
-                out_run = spas_sage2_attn_meansim_topk_nhd_cuda(
-                    q_run, k_run, v_run,
-                    topk=_topk,
-                    is_causal=is_causal,
-                )
-            else:
-                out_run = spas_sage2_attn_meansim_topk_cuda(
-                    q_run.permute(0, 2, 1, 3).contiguous(),
-                    k_run.permute(0, 2, 1, 3).contiguous(),
-                    v_run.permute(0, 2, 1, 3).contiguous(),
-                    topk=_topk,
-                    is_causal=is_causal,
-                    tensor_layout="HND",
-                ).permute(0, 2, 1, 3)
-
-            output[q_start:q_end] = out_run.view(-1, heads, headdim)
-
-        i = j
-
-    return output.to(out_dtype) if output.dtype != out_dtype else output
+def _dump_sparge_profile():
+    torch.cuda.synchronize()
+    kinds = sorted(_sparge_prof_results.keys())
+    report = []
+    for knd in kinds:
+        arr = _sparge_prof_results[knd]
+        ms = [e0.elapsed_time(e1) for pair in arr for (e0, e1) in [pair if len(pair) == 2 else (pair[0], pair[1])]]
+        if not ms:
+            continue
+        avg = sum(ms) / len(ms)
+        report.append(f"{knd}: n={len(ms)} avg={avg:.2f}ms min={min(ms):.2f} max={max(ms):.2f}")
+    shp = _sparge_prof_shapes.get('sparge_varlen')
+    if shp:
+        report.append("shape[nseq,tokens,kinds,min,max]=" + str(shp))
+    print("[SPARGE-PROFILE] calls=%d | %s" % (_sparge_prof_calls[0], " | ".join(report)), flush=True)
+    _sparge_prof_results.clear()
+    _sparge_prof_shapes.clear()
 
 def validate_gguf_availability(operation: str = "load GGUF model", debug=None) -> None:
     """
