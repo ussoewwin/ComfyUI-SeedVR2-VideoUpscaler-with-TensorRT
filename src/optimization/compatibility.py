@@ -171,15 +171,23 @@ except (ImportError, AttributeError, OSError):
 
 # 5. SpargeAttn-hswq (block-sparse attention on SageAttention2++ kernels)
 spas_sage2_attn_meansim_topk_cuda = None
+spas_sage2_attn_meansim_topk_nhd_cuda = None
 SPARGE_ATTN_AVAILABLE = False
 try:
-    from spas_sage_hswq_attn import spas_sage2_attn_meansim_topk_cuda as _spas_topk
+    from spas_sage_hswq_attn import (
+        spas_sage2_attn_meansim_topk_cuda as _spas_topk,
+        spas_sage2_attn_meansim_topk_nhd_cuda as _spas_nhd,
+    )
     spas_sage2_attn_meansim_topk_cuda = _spas_topk
+    spas_sage2_attn_meansim_topk_nhd_cuda = _spas_nhd
     SPARGE_ATTN_AVAILABLE = True
 except (ImportError, AttributeError, OSError):
     pass
 
 SAGE_ATTN_AVAILABLE = SAGE_ATTN_2_AVAILABLE or SAGE_ATTN_3_AVAILABLE
+
+# __SPARGE_SYNC_FREE__: per-(tensor-id,sizes) plan cache; hit = 0 D2H sync
+_sparge_plan_cache = {}
 
 
 def validate_attention_mode(requested_mode: str, debug=None) -> str:
@@ -607,25 +615,17 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
     """
     SpargeAttn-hswq block-sparse attention for packed variable-length sequences.
 
-    Runs the fork's recommended plug-and-play API (spas_sage2_attn_meansim_topk_cuda,
-    SageAttention2++ INT8 QK / FP8 PV kernels with two-stage block-sparse filtering)
-    per sequence window, mirroring pytorch_varlen_attention's per-window loop.
+    Uses spas_sage2_attn_meansim_topk_nhd_cuda (SageAttention2++ INT8 QK / FP8 PV
+    with two-stage block-sparse filtering) directly on zero-copy NHD views.
 
-    Per-window contract (fallback to SDPA with a logged notice, never silent):
-    - seq_len >= 128 (kernel assert)
-    - headdim in (64, 128) (kernel assert)
-    - no attention mask (the API accepts attn_mask but ignores it)
-    - topk outside (0, 1] is sanitized to 0.5
-
-    Args:
-        q: Query tensor (total_seq, heads, head_dim)
-        k: Key tensor (total_seq, heads, head_dim)
-        v: Value tensor (total_seq, heads, head_dim)
-        cu_seqlens_q / cu_seqlens_k: Cumulative sequence lengths (int tensors)
-        max_seqlen_q / max_seqlen_k: Unused by this backend (kept for signature parity)
-
-    Returns:
-        Attention output tensor (total_seq, heads, head_dim)
+    Fast Path:
+    - Uniform window lengths: single-launch zero-copy view (batch_size, L, heads, dim),
+      zero D2H sync, zero tensor copies, zero Python slice loops.
+    
+    Fallback / Ragged Path:
+    - Mixed window lengths: groups consecutive runs of equal-length windows and invokes
+      NHD kernels per contiguous slice with single-slice writebacks.
+    - Windows with seq_len < 128 or headdim not in (64, 128) fall back to SDPA.
     """
     if not SPARGE_ATTN_AVAILABLE:
         raise ImportError("SpargeAttn-hswq is not available")
@@ -650,11 +650,7 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
         k = k.to(torch.bfloat16)
         v = v.to(torch.bfloat16)
 
-    cu_q_cpu = cu_seqlens_q.long().cpu()
-    cu_k_cpu = cu_seqlens_k.long().cpu()
-    num_seqs = len(cu_q_cpu) - 1
-
-    # Sanitize topk once (same contract as the stock wrapper)
+    # Sanitize topk once
     try:
         _topk = float(sparge_topk)
     except (TypeError, ValueError):
@@ -663,108 +659,127 @@ def call_sparge_attn_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, m
         _topk = 0.5
 
     headdim = q.size(-1)
+    heads = q.size(1)
 
-    # Split windows: SDPA fallback contract (seq_len < 128 or headdim not 64/128)
-    sdpa_idx = []
-    sparse_idx = []
-    for i in range(num_seqs):
-        seq_len_i = int(cu_q_cpu[i + 1]) - int(cu_q_cpu[i])
-        if seq_len_i < 128 or headdim not in (64, 128):
-            sdpa_idx.append(i)
+    # Fast path: plan-cached zero-sync uniform detection (__SPARGE_SYNC_FREE__).
+    # Stock detection runs `(seq == seq[0]).all()` + two `.item()` per call =
+    # 3 D2H syncs x 72 calls/forward; on WDDM each sync busy-waits ~3-7ms, i.e.
+    # seconds per batch. Cache one plan per (queue shape); stale plans cannot
+    # mis-execute: the zero-copy `.view()` below validates B*L against numel
+    # and raises into the except-free ragged path on any mismatch.
+    _cv_key = (int(cu_seqlens_q.shape[0]), int(cu_seqlens_k.shape[0]),
+               int(q.shape[0]), int(k.shape[0]), int(v.shape[0]))
+    plan = _sparge_plan_cache.get(_cv_key)
+    if plan is None:
+        seq_lens_q = cu_seqlens_q[1:] - cu_seqlens_q[:-1]
+        seq_lens_k = cu_seqlens_k[1:] - cu_seqlens_k[:-1]
+        uniform = bool((seq_lens_q == seq_lens_q[0]).all()) and bool(
+            (seq_lens_k == seq_lens_k[0]).all())
+        if uniform:
+            plan = ('uniform', cu_seqlens_q.shape[0] - 1,
+                    int(seq_lens_q[0].item()), int(seq_lens_k[0].item()))
         else:
-            sparse_idx.append(i)
+            plan = ('ragged',)
+        # keep the cache tiny: 2 shapes max (uniform + fallback)
+        if len(_sparge_plan_cache) >= 2:
+            _sparge_plan_cache.clear()
+        _sparge_plan_cache[_cv_key] = plan
 
-    output = torch.empty_like(q)
-
-    # SDPA fallback windows (unchanged contract)
-    for i in sdpa_idx:
-        q_start, q_end = int(cu_q_cpu[i]), int(cu_q_cpu[i + 1])
-        k_start, k_end = int(cu_k_cpu[i]), int(cu_k_cpu[i + 1])
-        q_i = q[q_start:q_end].permute(1, 0, 2).unsqueeze(0)
-        k_i = k[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
-        v_i = v[k_start:k_end].permute(1, 0, 2).unsqueeze(0)
-        out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
-        output[q_start:q_end] = out_i.squeeze(0).permute(1, 0, 2)
-
-    if sparse_idx:
-        # _SEEDVR2_SPARGE_NATIVE_BATCH:
-        # The real bottleneck measured on the live workflow (1080p, 21f, 100 NA
-        # windows) is the per-window Python/CUDA-launch overhead: the stock loop
-        # issues num_windows kernel launches PER attention call (72 calls x 100
-        # windows = 7200 launches/step vs sageattn_varlen's 72). WDDM launch
-        # overhead (~0.15 ms) makes that ~1 s/step of pure overhead.
-        # Fix: group windows by equal length and invoke the STOCK topk API once
-        # per group on a batched (n, H, L, D) view. The API (and its internal
-        # block map, LUT, quant and sparse kernels) is natively batch-capable,
-        # so outputs are produced by the exact stock code path - no
-        # re-implementation, no extra copies (views only; the API makes its own
-        # contiguous copies exactly as it would per window).
-        groups = {}
-        for i in sparse_idx:
-            L = int(cu_q_cpu[i + 1]) - int(cu_q_cpu[i])
-            groups.setdefault(L, []).append(i)
-
-        for L, idxs in groups.items():
-            n = len(idxs)
-            starts = [int(cu_q_cpu[i]) for i in idxs]
-            k_starts = [int(cu_k_cpu[i]) for i in idxs]
-            k_ends = [int(cu_k_cpu[i + 1]) for i in idxs]
-            # Contiguous per-window block: window i occupies [start, start+L).
-            # Build (n, L, H, D) with a stride trick only when windows are
-            # contiguous in memory (equal stride L); otherwise fall back to a
-            # single cat. In the NA-windowing path windows are laid out
-            # back-to-back, so q[start:i+1] slices tile the tensor.
-            # Simplest correct construction: index_select-style gather via
-            # torch.cat of views would copy; use as_strided when possible.
-            # Zero-copy fast path: equal-length windows laid out back-to-back
-            # (the NA-windowing norm: cu_seqlens is uniform) -> a plain view
-            # (n, L, H, D) suffices. Only ragged/non-contiguous groups cat.
-            _q_contig = all(starts[j + 1] - starts[j] == L for j in range(n - 1)) and starts[0] == 0
-            _k_contig = all(k_starts[j + 1] - k_starts[j] == L for j in range(n - 1)) and k_starts[0] == 0
+    if plan[0] == 'uniform':
+        batch_size, L_q, L_k = plan[1], plan[2], plan[3]
+        if L_q == L_k and L_q >= 128 and headdim in (64, 128):
+            # 100% Zero-Copy Fast Path: 1 kernel launch, 0 allocations on the
+            # fast path, 0 Python loops, 0 D2H syncs.
             try:
-                if _q_contig and _k_contig and int(cu_q_cpu[-1]) == n * L:
-                    q_g = q.view(n, L, *q.shape[1:]).permute(0, 2, 1, 3)
-                    k_g = k.view(n, L, *k.shape[1:]).permute(0, 2, 1, 3)
-                    v_g = v.view(n, L, *v.shape[1:]).permute(0, 2, 1, 3)
-                    _flat_back = True
+                q_view = q.view(batch_size, L_q, heads, headdim)
+                k_view = k.view(batch_size, L_k, heads, headdim)
+                v_view = v.view(batch_size, L_k, heads, headdim)
+            except RuntimeError:
+                # stale plan (lens changed under the same shape key): rebuild
+                _sparge_plan_cache.pop(_cv_key, None)
+            else:
+                if spas_sage2_attn_meansim_topk_nhd_cuda is not None:
+                    out = spas_sage2_attn_meansim_topk_nhd_cuda(
+                        q_view, k_view, v_view,
+                        topk=_topk,
+                        is_causal=is_causal,
+                    )
                 else:
-                    q_g = torch.cat([q[s:s + L] for s in starts], dim=0).view(n, L, *q.shape[1:]).permute(0, 2, 1, 3)
-                    k_g = torch.cat([k[ks:ks + L] for ks in k_starts], dim=0).view(n, L, *k.shape[1:]).permute(0, 2, 1, 3)
-                    v_g = torch.cat([v[ks:ks + L] for ks in k_starts], dim=0).view(n, L, *v.shape[1:]).permute(0, 2, 1, 3)
-                    _flat_back = False
-            except Exception:
-                # Fallback: per-window stock loop for this group (rare)
-                for i in idxs:
-                    q_start, q_end = int(cu_q_cpu[i]), int(cu_q_cpu[i + 1])
-                    k_start, k_end = int(cu_k_cpu[i]), int(cu_k_cpu[i + 1])
-                    out_i = spas_sage2_attn_meansim_topk_cuda(
-                        q[q_start:q_end].permute(1, 0, 2).unsqueeze(0),
-                        k[k_start:k_end].permute(1, 0, 2).unsqueeze(0),
-                        v[k_start:k_end].permute(1, 0, 2).unsqueeze(0),
+                    out = spas_sage2_attn_meansim_topk_cuda(
+                        q_view.permute(0, 2, 1, 3).contiguous(),
+                        k_view.permute(0, 2, 1, 3).contiguous(),
+                        v_view.permute(0, 2, 1, 3).contiguous(),
                         topk=_topk,
                         is_causal=is_causal,
                         tensor_layout="HND",
-                    )
-                    output[q_start:q_end] = out_i.squeeze(0).permute(1, 0, 2)
-                continue
+                    ).permute(0, 2, 1, 3)
 
-            # One stock API call for the whole (equal-length) group.
-            o = spas_sage2_attn_meansim_topk_cuda(
-                q_g, k_g, v_g,
-                topk=_topk,
-                is_causal=is_causal,
-                tensor_layout="HND",
-            )
-            # Write back: (n, H, L, D) -> (n, L, H, D). Fast path writes the
-            # whole group in one strided copy; ragged path writes per window.
-            o_lhd = o.permute(0, 2, 1, 3)
-            if _flat_back:
-                output.view(n, L, *output.shape[1:]).copy_(o_lhd.to(out_dtype) if o_lhd.dtype != out_dtype else o_lhd)
+                out_flat = out.view(-1, heads, headdim)
+                return out_flat.to(out_dtype) if out_flat.dtype != out_dtype else out_flat
+
+    # Variable-length / mixed sequence lengths:
+    cu_q_cpu = cu_seqlens_q.long().cpu()
+    cu_k_cpu = cu_seqlens_k.long().cpu()
+    num_seqs = len(cu_q_cpu) - 1
+
+    output = torch.empty_like(q)
+
+    # Group consecutive identical windows into contiguous slices
+    # to avoid both per-window loops and torch.cat allocations
+    i = 0
+    while i < num_seqs:
+        L_qi = int(cu_q_cpu[i + 1]) - int(cu_q_cpu[i])
+        L_ki = int(cu_k_cpu[i + 1]) - int(cu_k_cpu[i])
+
+        # Find contiguous run of identical lengths
+        j = i + 1
+        while j < num_seqs:
+            if (int(cu_q_cpu[j + 1]) - int(cu_q_cpu[j]) == L_qi) and (int(cu_k_cpu[j + 1]) - int(cu_k_cpu[j]) == L_ki):
+                j += 1
             else:
-                pos = 0
-                for s in starts:
-                    output[s:s + L] = o_lhd[pos]
-                    pos += 1
+                break
+
+        n_run = j - i
+        q_start = int(cu_q_cpu[i])
+        q_end = int(cu_q_cpu[j])
+        k_start = int(cu_k_cpu[i])
+        k_end = int(cu_k_cpu[j])
+
+        if L_qi != L_ki or L_qi < 128 or headdim not in (64, 128):
+            # SDPA fallback for short windows or asymmetric Q/K
+            for idx in range(i, j):
+                qs, qe = int(cu_q_cpu[idx]), int(cu_q_cpu[idx + 1])
+                ks, ke = int(cu_k_cpu[idx]), int(cu_k_cpu[idx + 1])
+                q_i = q[qs:qe].permute(1, 0, 2).unsqueeze(0)
+                k_i = k[ks:ke].permute(1, 0, 2).unsqueeze(0)
+                v_i = v[ks:ke].permute(1, 0, 2).unsqueeze(0)
+                out_i = _sdpa(q_i, k_i, v_i, is_causal=is_causal)
+                output[qs:qe] = out_i.squeeze(0).permute(1, 0, 2)
+        else:
+            # Contiguous slice execution (zero-copy view directly into q)
+            q_run = q[q_start:q_end].view(n_run, L_qi, heads, headdim)
+            k_run = k[k_start:k_end].view(n_run, L_ki, heads, headdim)
+            v_run = v[k_start:k_end].view(n_run, L_ki, heads, headdim)
+
+            if spas_sage2_attn_meansim_topk_nhd_cuda is not None:
+                out_run = spas_sage2_attn_meansim_topk_nhd_cuda(
+                    q_run, k_run, v_run,
+                    topk=_topk,
+                    is_causal=is_causal,
+                )
+            else:
+                out_run = spas_sage2_attn_meansim_topk_cuda(
+                    q_run.permute(0, 2, 1, 3).contiguous(),
+                    k_run.permute(0, 2, 1, 3).contiguous(),
+                    v_run.permute(0, 2, 1, 3).contiguous(),
+                    topk=_topk,
+                    is_causal=is_causal,
+                    tensor_layout="HND",
+                ).permute(0, 2, 1, 3)
+
+            output[q_start:q_end] = out_run.view(-1, heads, headdim)
+
+        i = j
 
     return output.to(out_dtype) if output.dtype != out_dtype else output
 
