@@ -212,26 +212,26 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
             # forward_comfy_cast_weights already streamed the weight onto
             # input.device (DisTorch2 offload), so offload is preserved; only the
             # compute is replaced.
+            p = getattr(weight, "_params", None)
             if (
-                isinstance(weight, torch.Tensor)
-                and type(weight).__name__ == "QuantizedTensor"
+                type(weight).__name__ == "QuantizedTensor"
                 and getattr(weight, "_layout_cls", None) == _LAYOUT
+                and p is not None
             ):
-                params = getattr(weight, "_params", None)
-                if params is not None:
-                    return _efficient_w4a8_linear(
-                        input,
-                        weight._qdata,
-                        params.scale,
-                        params.s_channel,
-                        codebook=getattr(params, "codebook", None),
-                        correction=getattr(params, "correction", None),
-                        bias=bias,
-                        group_size=int(getattr(params, "group_size", 16)),
-                        convrot_groupsize=int(getattr(params, "convrot_groupsize", 256)),
-                        out_dtype=getattr(params, "orig_dtype", input.dtype),
-                    )
-            return super()._forward(input, weight, bias)
+                return _efficient_w4a8_linear(
+                    input,
+                    weight._qdata,
+                    p.scale,
+                    getattr(p, "s_channel", None),
+                    codebook=getattr(p, "codebook", None),
+                    correction=getattr(p, "correction", None),
+                    bias=bias,
+                    group_size=int(getattr(p, "group_size", 16)),
+                    convrot_groupsize=int(getattr(p, "convrot_groupsize", 256)),
+                    out_dtype=getattr(p, "orig_dtype", input.dtype),
+                )
+            # Streamed/dequantized weight (non-quantized): regular linear.
+            return torch.nn.functional.linear(input, weight, bias)
 
     ops.Linear = _mark_dit_locked(Linear)
     return ops
