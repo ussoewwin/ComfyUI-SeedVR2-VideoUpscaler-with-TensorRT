@@ -289,6 +289,9 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
             # exposing the donor here makes dit_offload_device the CPU, so weights go
             # to host RAM and VRAM stays low. donor_device is the node's own value.
             "offload_device": str(donor_device),
+            "cache_model": False,
+            "blocks_to_swap": 0,
+            "swap_io_components": False,
             "attention_mode": attention_mode,
             "sparge_topk": sparge_topk,
             "torch_compile_args": torch_compile_args,
