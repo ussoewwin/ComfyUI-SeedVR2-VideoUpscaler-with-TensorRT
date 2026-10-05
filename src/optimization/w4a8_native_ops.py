@@ -304,7 +304,7 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
     # (and convrot64) quantization is independent per row, so processing the
     # activation in row chunks is bit-exact and shrinks xq to chunk_m*k.
     # Chunk only the ACTIVATION/GEMM side; weight tensors are untouched.
-    _CHUNK_ROWS = 4096
+    _CHUNK_ROWS = 2048
     if m <= _CHUNK_ROWS:
         chunk_cols = _int4_int8_weight_chunk_cols(m, n)
         workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
