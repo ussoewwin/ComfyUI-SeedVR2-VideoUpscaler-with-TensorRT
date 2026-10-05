@@ -262,8 +262,7 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
     output_dtype_code = DTYPE_TO_CODE[out_dtype]
     stream_ptr = torch.cuda.current_stream(x.device).cuda_stream
     bias_arg = _gemm_vector_arg(bias, x.device, out_dtype) if bias is not None else None
-    codebook_arg = _wrap_for_dlpack(codebook) if codebook is not None else None
-    s_rel_u8 = _wrap_for_dlpack(s_rel.view(torch.uint8))
+    s_rel_u8 = s_rel.view(torch.uint8)  # wrap per kernel call (dlpack capsule is single-use)
 
     # __W4A8_MEM__: cap the activation-side int8 buffer. The stock kernel needs a
     # full m*k int8 activation (xq); at m=92664,k=12288 that is ~1.08 GiB. Row-wise
@@ -276,7 +275,8 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
         workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
         xq, xs = quantize_int8_rowwise_convrot64(x_2d, convrot_groupsize)
         used = cb._C.w4a8_codebook_gemm_chunked(
-            _wrap_for_dlpack(xq), _wrap_for_dlpack(qdata), s_rel_u8, codebook_arg,
+            _wrap_for_dlpack(xq), _wrap_for_dlpack(qdata), _wrap_for_dlpack(s_rel_u8),
+            _wrap_for_dlpack(codebook) if codebook is not None else None,
             _wrap_for_dlpack(s_channel), _wrap_for_dlpack(xs.reshape(m)),
             _wrap_for_dlpack(bias_arg) if bias_arg is not None else None,
             _wrap_for_dlpack(workspace), _wrap_for_dlpack(out),
@@ -296,7 +296,8 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
             xq, xs = quantize_int8_rowwise_convrot64(x_chunk, convrot_groupsize)
             out_chunk = out[start:end]
             used = cb._C.w4a8_codebook_gemm_chunked(
-                _wrap_for_dlpack(xq), _wrap_for_dlpack(qdata), s_rel_u8, codebook_arg,
+                _wrap_for_dlpack(xq), _wrap_for_dlpack(qdata), _wrap_for_dlpack(s_rel_u8),
+                _wrap_for_dlpack(codebook) if codebook is not None else None,
                 _wrap_for_dlpack(s_channel), _wrap_for_dlpack(xs.reshape(mc)),
                 _wrap_for_dlpack(bias_arg) if bias_arg is not None else None,
                 _wrap_for_dlpack(workspace), _wrap_for_dlpack(out_chunk),
