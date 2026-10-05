@@ -274,7 +274,12 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
         return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
                     group_size, convrot_groupsize, out_dtype)
 
-    x_2d = x.reshape(-1, k).contiguous()
+    # __W4A8_MEM__: avoid a full contiguous copy of the activation when already
+    # contiguous (m*k*2 bytes at m=92664,k=12288). convrot quantize only needs
+    # the last dim contiguous per row.
+    x_2d = x.reshape(-1, k)
+    if not x_2d.is_contiguous():
+        x_2d = x_2d.contiguous()
     m = x_2d.shape[0]
     fast_act = (
         m >= 512
