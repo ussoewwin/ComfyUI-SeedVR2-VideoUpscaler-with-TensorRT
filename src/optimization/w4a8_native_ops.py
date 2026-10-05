@@ -72,25 +72,118 @@ def _mark_dit_locked(o):
 
 def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> Any:
     """
-    Return ComfyUI native ``comfy.ops.mixed_precision_ops`` for W4A8 DiT loads.
+    Return comfy.ops mixed-precision operations for W4A8 DiT loads.
 
-    Empty ``quant_config``: layers with ``comfy_quant`` become QuantizedTensor
-    managed natively by ComfyUI's AsymW4A8Int8Layout; unmarked layers load as plain
-    compute_dtype Parameters.
+    Loader approach adopted from starsFriday/ComfyUI-W4A8-Loader (nodes.py):
+    instead of relying on comfy.ops._load_quantized_module, each W4A8 Linear
+    implements its own ``_load_from_state_dict`` that pops ``comfy_quant`` and the
+    companion tensors (weight_s_rel / weight_s_channel / weight_codebook /
+    weight_correction) and builds the QuantizedTensor directly. Non-W4A8 layers
+    fall through to the parent path unchanged.
     """
+    import json as _json
     import comfy.ops as comfy_ops
+    import comfy.quant_ops as comfy_quant_ops
+
+    _FORMAT = "asym_w4a8_int8"
+    _LAYOUT = "AsymW4A8Int8Layout"
+
+    from comfy_kitchen.tensor import AsymW4A8Int8Layout as _Layout
+    comfy_quant_ops.register_layout_class(_LAYOUT, _Layout)
+    comfy_quant_ops.QUANT_ALGOS[_FORMAT] = {
+        "storage_t": torch.int8,
+        "parameters": {"weight_s_rel", "weight_s_channel", "weight_codebook", "weight_correction"},
+        "comfy_tensor_layout": _LAYOUT,
+        "quantize_input": False,
+    }
+
+    def _decode(value):
+        return _json.loads(value.detach().cpu().numpy().tobytes())
 
     # __W4A8_EFFICIENT_FORWARD__: install the W4A8-only memory-efficient forward
     # before the layers are created, so every W4A8 linear uses it in Phase 2.
     install_efficient_w4a8_forward()
 
-    ops = comfy_ops.mixed_precision_ops(
-        quant_config={},
+    base_ops = comfy_ops.mixed_precision_ops(
+        quant_config={"mixed_ops": True},
         compute_dtype=compute_dtype,
         full_precision_mm=False,
         disabled=[],
     )
 
+    class W4A8Operations(base_ops):
+        class Linear(base_ops.Linear):
+            def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
+                                      missing_keys, unexpected_keys, error_msgs):
+                config_key = f"{prefix}comfy_quant"
+                config_value = state_dict.get(config_key)
+                if config_value is None or _decode(config_value).get("format") != _FORMAT:
+                    return super()._load_from_state_dict(
+                        state_dict, prefix, local_metadata, strict,
+                        missing_keys, unexpected_keys, error_msgs)
+
+                config = _decode(state_dict.pop(config_key))
+                weight_key = f"{prefix}weight"
+                weight = state_dict.pop(weight_key, None)
+                if weight is None:
+                    raise ValueError(f"Missing W4A8 weight for layer {prefix.rstrip('.')}")
+
+                device = self.factory_kwargs["device"]
+                compute_dtype = self.factory_kwargs["dtype"]
+                loaded_keys = [config_key, weight_key]
+
+                def pop_required(name, dtype=None):
+                    key = f"{prefix}{name}"
+                    value = state_dict.pop(key, None)
+                    if value is None:
+                        raise ValueError(f"Missing W4A8 tensor {key}")
+                    loaded_keys.append(key)
+                    value = value.to(device=device)
+                    if dtype is not None and value.dtype != dtype:
+                        value = value.view(dtype)
+                    return value
+
+                def pop_optional(name):
+                    key = f"{prefix}{name}"
+                    value = state_dict.pop(key, None)
+                    if value is not None:
+                        loaded_keys.append(key)
+                        value = value.to(device=device)
+                    return value
+
+                params_config = config.get("params", {})
+                if not isinstance(params_config, dict):
+                    params_config = {}
+                params = _Layout.Params(
+                    scale=pop_required("weight_s_rel", torch.float8_e4m3fn),
+                    s_channel=pop_required("weight_s_channel"),
+                    correction=pop_optional("weight_correction"),
+                    codebook=pop_optional("weight_codebook"),
+                    group_size=int(config.get("group_size", params_config.get("group_size", 16))),
+                    convrot_groupsize=int(config.get(
+                        "convrot_groupsize", params_config.get("convrot_groupsize", 256))),
+                    orig_dtype=compute_dtype,
+                    orig_shape=self._orig_shape,
+                )
+                self.quant_format = _FORMAT
+                self.layout_type = _LAYOUT
+                self._full_precision_mm_config = config.get("full_precision_matrix_mult", False)
+                if not self._full_precision_mm:
+                    self._full_precision_mm = self._full_precision_mm_config
+                self.weight = torch.nn.Parameter(
+                    comfy_quant_ops.QuantizedTensor(
+                        weight.to(device=device, dtype=torch.int8), _LAYOUT, params),
+                    requires_grad=False,
+                )
+
+                torch.nn.Module._load_from_state_dict(
+                    self, state_dict, prefix, local_metadata, strict,
+                    missing_keys, unexpected_keys, error_msgs)
+                for key in loaded_keys:
+                    if key in missing_keys:
+                        missing_keys.remove(key)
+
+    ops = W4A8Operations
     _BaseLinear = ops.Linear
     _act_dtype = compute_dtype if compute_dtype in (torch.float16, torch.bfloat16) else torch.float16
 
@@ -107,7 +200,6 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
 
     ops.Linear = _mark_dit_locked(Linear)
     return ops
-
 
 # ============================================================================
 # W4A8 memory-efficient forward (__W4A8_EFFICIENT_FORWARD__)
