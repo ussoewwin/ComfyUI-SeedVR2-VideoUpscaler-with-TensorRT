@@ -239,8 +239,9 @@ def download_weight(dit_model: Optional[str] = None, vae_model: Optional[str] = 
                     save_validation_cache(cache, cache_dir)
         
         # Download file
-        # Resolve optional subfolder inside the repo (e.g. diffusion_models/)
-        remote_name = f"{model_info.subdir}/{filename}" if model_info.subdir else filename
+        # Resolve optional subfolder inside the repo (e.g. diffusion_models/) and remote filename override
+        actual_remote_file = getattr(model_info, 'remote_filename', None) or filename
+        remote_name = f"{model_info.subdir}/{actual_remote_file}" if model_info.subdir else actual_remote_file
         url = HUGGINGFACE_BASE_URL.format(repo=repo, filename=remote_name)
         temp_file = f"{filepath}.download"
         

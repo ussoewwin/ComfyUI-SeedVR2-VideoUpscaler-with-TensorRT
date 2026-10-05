@@ -29,6 +29,7 @@ class ModelInfo:
     size: str = "3B" # '3B', '7B', etc.
     variant: Optional[str] = None # 'sharp', etc.
     subdir: Optional[str] = None # Optional remote subfolder inside the repo (e.g. 'diffusion_models')
+    remote_filename: Optional[str] = None # Optional remote filename if different from local filename
     sha256: Optional[str] = None # Cached hash
 
 # Model registry with metadata
@@ -44,7 +45,7 @@ MODEL_REGISTRY = {
     # HSWQ INT8 (int8_tensorwise + ConvRot) — native INT8 inference target (VRAM-saving path)
     "seedvr2_7b_int8_convrot.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="int8_tensorwise_convrot", sha256="5aa0d25fc9d35e449b659d0c9a5dcb22e2a4fa04032101b95a39da42b32c1be6"),
     "seedvr2_7b_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="nvfp4", sha256="cc4af1a7bd5377066496f393555478323e806fa21163bdbe3409451aface9b93"),
-    "seedvr2_7b_w4a8.safetensors": ModelInfo(size="7B", precision="asym_w4a8_int8"),
+    "seedvr2_7b_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-w4a8", remote_filename="seedvr2_7b_convrot_w4a8.safetensors", size="7B", precision="asym_w4a8_int8"),
     "seedvr2_7b_convrot_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-w4a8", size="7B", precision="asym_w4a8_int8"),
     
     # 7B sharp variants
