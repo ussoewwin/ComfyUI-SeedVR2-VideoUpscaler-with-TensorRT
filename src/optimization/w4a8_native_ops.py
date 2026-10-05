@@ -262,30 +262,59 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
     output_dtype_code = DTYPE_TO_CODE[out_dtype]
     stream_ptr = torch.cuda.current_stream(x.device).cuda_stream
     bias_arg = _gemm_vector_arg(bias, x.device, out_dtype) if bias is not None else None
-    chunk_cols = _int4_int8_weight_chunk_cols(m, n)
-    workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
-
-    # No prealloc: the fused convrot64 quantize returns its own xq/xs.
-    xq, xs = quantize_int8_rowwise_convrot64(x_2d, convrot_groupsize)
     codebook_arg = _wrap_for_dlpack(codebook) if codebook is not None else None
-    used = cb._C.w4a8_codebook_gemm_chunked(
-        _wrap_for_dlpack(xq),
-        _wrap_for_dlpack(qdata),
-        _wrap_for_dlpack(s_rel.view(torch.uint8)),
-        codebook_arg,
-        _wrap_for_dlpack(s_channel),
-        _wrap_for_dlpack(xs.reshape(m)),
-        _wrap_for_dlpack(bias_arg) if bias_arg is not None else None,
-        _wrap_for_dlpack(workspace),
-        _wrap_for_dlpack(out),
-        group_size,
-        chunk_cols,
-        output_dtype_code,
-        stream_ptr,
-    )
-    if not used:
-        return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
-                    group_size, convrot_groupsize, out_dtype)
+    s_rel_u8 = _wrap_for_dlpack(s_rel.view(torch.uint8))
+
+    # __W4A8_MEM__: cap the activation-side int8 buffer. The stock kernel needs a
+    # full m*k int8 activation (xq); at m=92664,k=12288 that is ~1.08 GiB. Row-wise
+    # (and convrot64) quantization is independent per row, so processing the
+    # activation in row chunks is bit-exact and shrinks xq to chunk_m*k.
+    # Chunk only the ACTIVATION/GEMM side; weight tensors are untouched.
+    _CHUNK_ROWS = 16384
+    if m <= _CHUNK_ROWS:
+        chunk_cols = _int4_int8_weight_chunk_cols(m, n)
+        workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
+        xq, xs = quantize_int8_rowwise_convrot64(x_2d, convrot_groupsize)
+        used = cb._C.w4a8_codebook_gemm_chunked(
+            _wrap_for_dlpack(xq), _wrap_for_dlpack(qdata), s_rel_u8, codebook_arg,
+            _wrap_for_dlpack(s_channel), _wrap_for_dlpack(xs.reshape(m)),
+            _wrap_for_dlpack(bias_arg) if bias_arg is not None else None,
+            _wrap_for_dlpack(workspace), _wrap_for_dlpack(out),
+            group_size, chunk_cols, output_dtype_code, stream_ptr,
+        )
+        if not used:
+            return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
+                        group_size, convrot_groupsize, out_dtype)
+    else:
+        used_any = False
+        for start in range(0, m, _CHUNK_ROWS):
+            end = min(start + _CHUNK_ROWS, m)
+            x_chunk = x_2d[start:end]
+            mc = end - start
+            chunk_cols = _int4_int8_weight_chunk_cols(mc, n)
+            workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
+            xq, xs = quantize_int8_rowwise_convrot64(x_chunk, convrot_groupsize)
+            out_chunk = out[start:end]
+            used = cb._C.w4a8_codebook_gemm_chunked(
+                _wrap_for_dlpack(xq), _wrap_for_dlpack(qdata), s_rel_u8, codebook_arg,
+                _wrap_for_dlpack(s_channel), _wrap_for_dlpack(xs.reshape(mc)),
+                _wrap_for_dlpack(bias_arg) if bias_arg is not None else None,
+                _wrap_for_dlpack(workspace), _wrap_for_dlpack(out_chunk),
+                group_size, chunk_cols, output_dtype_code, stream_ptr,
+            )
+            if not used:
+                return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
+                            group_size, convrot_groupsize, out_dtype)
+            used_any = True
+            if correction is not None:
+                groups = k // group_size
+                sx = xq.view(mc, groups, group_size).sum(-1, dtype=torch.int32).to(out_dtype)
+                sx = sx * xs.to(out_dtype)
+                out_chunk.addmm_(sx, correction.to(out_dtype))
+        if not used_any:
+            return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
+                        group_size, convrot_groupsize, out_dtype)
+        return out.reshape(*x.shape[:-1], n)
 
     if correction is not None:
         groups = k // group_size
