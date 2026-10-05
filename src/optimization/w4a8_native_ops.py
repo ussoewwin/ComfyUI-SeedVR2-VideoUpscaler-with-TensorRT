@@ -90,12 +90,12 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
 
     from comfy_kitchen.tensor import AsymW4A8Int8Layout as _Layout
     comfy_quant_ops.register_layout_class(_LAYOUT, _Layout)
-    comfy_quant_ops.QUANT_ALGOS[_FORMAT] = {
-        "storage_t": torch.int8,
-        "parameters": {"weight_s_rel", "weight_s_channel", "weight_codebook", "weight_correction"},
-        "comfy_tensor_layout": _LAYOUT,
-        "quantize_input": False,
-    }
+    # __W4A8_SELF__: do NOT overwrite the GLOBAL QUANT_ALGOS entry. ComfyUI core
+    # ships its own native asym_w4a8_int8 registry entry (parameters={weight_scale});
+    # overwriting it pollutes the shared registry and makes core's own
+    # _load_quantized_module register duplicate companion params (extra resident
+    # memory). The self loader below builds the QuantizedTensor itself and does
+    # not need the overwrite.
 
     def _decode(value):
         return _json.loads(value.detach().cpu().numpy().tobytes())
