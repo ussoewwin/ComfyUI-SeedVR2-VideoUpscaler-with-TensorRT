@@ -797,8 +797,10 @@ def upscale_all_batches(
             )
             debug.start_timer(f"dit_inference_{upscale_idx+1}")
             with torch.no_grad():
+                import os as _os_ac
+                _ac_w4a8 = _os_ac.environ.get('SEEDVR2_W4A8_AUTOCAST') == '1'
                 use_autocast = (
-                    not (nvfp4_native or w4a8_native)
+                    not (nvfp4_native or (w4a8_native and not _ac_w4a8))
                     and dit_dtype != ctx['compute_dtype']
                     and ctx['dit_device'].type != 'mps'
                 )
