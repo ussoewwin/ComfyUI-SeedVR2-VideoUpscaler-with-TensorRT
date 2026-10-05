@@ -22,26 +22,6 @@ from torch import nn
 from ...common.cache import Cache
 
 
-def _rope_apply_inplace(t, freqs):
-    """In-place interleaved rotary on the last dim; equivalent to
-    apply_rotary_emb(freqs, t) when rot_dim == d, without its transient
-    (t*cos, rotate_half, t*sin, sum, cat) buffers. freqs broadcasts over t."""
-    rot = freqs.shape[-1]
-    d = t.shape[-1]
-    if rot != d or d % 2 != 0:
-        return apply_rotary_emb(freqs, t)
-    if not t.is_contiguous():
-        t = t.contiguous()
-    cos = freqs.cos().to(t.dtype)
-    sin = freqs.sin().to(t.dtype)
-    t2 = t.view(*t.shape[:-1], d // 2, 2)
-    t_even = t2[..., 0].clone()
-    t_odd = t2[..., 1].clone()
-    t2[..., 0].copy_(t_even * cos[..., 0::2] - t_odd * sin[..., 0::2])
-    t2[..., 1].copy_(t_odd * cos[..., 1::2] + t_even * sin[..., 1::2])
-    return t
-
-
 class RotaryEmbeddingBase(nn.Module):
     def __init__(self, dim: int, rope_dim: int):
         super().__init__()
@@ -84,9 +64,12 @@ class RotaryEmbedding3d(RotaryEmbeddingBase):
         freqs = self.get_axial_freqs(T, H, W)
         q = rearrange(q, "b h (T H W) d -> b h T H W d", T=T, H=H, W=W)
         k = rearrange(k, "b h (T H W) d -> b h T H W d", T=T, H=H, W=W)
-        # __W4A8_MEM__: in-place rotary (no transient ~5x q/k buffers).
-        q = _rope_apply_inplace(q, freqs)
-        k = _rope_apply_inplace(k, freqs)
+        # __ROPE_NO_FP32__: apply_rotary_emb preserves the input dtype
+        # (it returns out.type(dtype)), so forcing fp32 here only allocated two
+        # full fp32 copies of q/k (measured peak +3.37 GiB) for a rounding-level
+        # difference (cos 0.999997 vs the fp32 path). Apply in the native dtype.
+        q = apply_rotary_emb(freqs, q)
+        k = apply_rotary_emb(freqs, k)
         q = rearrange(q, "b h T H W d -> b h (T H W) d")
         k = rearrange(k, "b h T H W d -> b h (T H W) d")
         return q, k
@@ -136,15 +119,15 @@ class NaMMRotaryEmbedding3d(MMRotaryEmbeddingBase):
             txt_freqs = txt_freqs.to(target_device)
         vid_q = rearrange(vid_q, "L h d -> h L d")
         vid_k = rearrange(vid_k, "L h d -> h L d")
-        vid_q = _rope_apply_inplace(vid_q, vid_freqs)
-        vid_k = _rope_apply_inplace(vid_k, vid_freqs)
+        vid_q = apply_rotary_emb(vid_freqs, vid_q)
+        vid_k = apply_rotary_emb(vid_freqs, vid_k)
         vid_q = rearrange(vid_q, "h L d -> L h d")
         vid_k = rearrange(vid_k, "h L d -> L h d")
 
         txt_q = rearrange(txt_q, "L h d -> h L d")
         txt_k = rearrange(txt_k, "L h d -> h L d")
-        txt_q = _rope_apply_inplace(txt_q, txt_freqs)
-        txt_k = _rope_apply_inplace(txt_k, txt_freqs)
+        txt_q = apply_rotary_emb(txt_freqs, txt_q)
+        txt_k = apply_rotary_emb(txt_freqs, txt_k)
         txt_q = rearrange(txt_q, "h L d -> L h d")
         txt_k = rearrange(txt_k, "h L d -> L h d")
         return vid_q, vid_k, txt_q, txt_k

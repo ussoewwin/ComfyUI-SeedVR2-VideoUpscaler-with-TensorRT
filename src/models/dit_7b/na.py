@@ -223,23 +223,9 @@ def concat_idx(
     tgt_idx = torch.cat(tgt_idx_list)
     src_idx = torch.argsort(tgt_idx)
     vid_idx_len = len(vid_idx)
-
-    # __W4A8_MEM__: gather straight from vid/txt into one output buffer instead of
-    # materializing torch.cat([vid, txt]) first (transient full-length copy).
-    def _concat_win(vid, txt):
-        vl = vid.shape[0]
-        n_out = tgt_idx.shape[0]
-        out = vid.new_empty((n_out,) + tuple(vid.shape[1:]))
-        sel_vid = tgt_idx < vl
-        sel_txt = ~sel_vid
-        if sel_vid.any():
-            out[sel_vid] = vid.index_select(0, tgt_idx[sel_vid])
-        if sel_txt.any():
-            out[sel_txt] = txt.index_select(0, tgt_idx[sel_txt] - vl)
-        return out
-
+    
     return (
-        _concat_win,
+        lambda vid, txt: torch.index_select(torch.cat([vid, txt]), 0, tgt_idx),
         lambda all: torch.index_select(all, 0, src_idx).split([vid_idx_len, len(txt_idx)]),
     )
 
@@ -430,25 +416,10 @@ def repeat_concat_idx(
         
         return vid_out, torch.cat(txt_out_coalesced)
 
-    # __W4A8_MEM__: avoid materializing torch.cat([vid, txt]) (a full-length copy)
-    # only to gather from it. tgt_idx addresses the concatenated [vid; txt], so split
-    # the indices and index_select straight from vid / txt into ONE output buffer.
-    # Removes the transient (vl+tl)-row buffer that previously lived alongside the
-    # gathered output (measured as the largest DiT activation allocation).
-    def _concat_win(vid, txt):
-        vl = vid.shape[0]
-        n_out = tgt_idx.shape[0]
-        out = vid.new_empty((n_out,) + tuple(vid.shape[1:]))
-        sel_vid = tgt_idx < vl
-        sel_txt = ~sel_vid
-        if sel_vid.any():
-            out[sel_vid] = vid.index_select(0, tgt_idx[sel_vid])
-        if sel_txt.any():
-            out[sel_txt] = txt.index_select(0, tgt_idx[sel_txt] - vl)
-        return out
-
+    # Use torch.index_select for memory-efficient gathering.
+    # index_select writes directly to output buffer without intermediate fancy-index copy.
     return (
-        _concat_win,
+        lambda vid, txt: torch.index_select(torch.cat([vid, txt]), 0, tgt_idx),
         lambda all: unconcat_coalesce(all),
     )
 
