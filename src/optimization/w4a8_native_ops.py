@@ -167,9 +167,10 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
                 )
                 self.quant_format = _FORMAT
                 self.layout_type = _LAYOUT
-                self._full_precision_mm_config = config.get("full_precision_matrix_mult", False)
-                if not self._full_precision_mm:
-                    self._full_precision_mm = self._full_precision_mm_config
+                # __W4A8_INT8_PARITY__: match core's _dit_quant_lock behavior -
+                # quantized DiT weight must never fall back to full-precision mm.
+                self._full_precision_mm_config = False
+                self._full_precision_mm = False
                 self.weight = torch.nn.Parameter(
                     comfy_quant_ops.QuantizedTensor(
                         weight.to(device=device, dtype=torch.int8), _LAYOUT, params),
