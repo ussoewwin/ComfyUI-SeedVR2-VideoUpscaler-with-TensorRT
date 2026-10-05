@@ -105,7 +105,7 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
     install_efficient_w4a8_forward()
 
     base_ops = comfy_ops.mixed_precision_ops(
-        quant_config={"mixed_ops": True},
+        quant_config={},
         compute_dtype=compute_dtype,
         full_precision_mm=False,
         disabled=[],
