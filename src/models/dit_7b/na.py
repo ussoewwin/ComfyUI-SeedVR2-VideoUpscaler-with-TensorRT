@@ -223,9 +223,23 @@ def concat_idx(
     tgt_idx = torch.cat(tgt_idx_list)
     src_idx = torch.argsort(tgt_idx)
     vid_idx_len = len(vid_idx)
-    
+
+    # __W4A8_MEM__: gather straight from vid/txt into one output buffer instead of
+    # materializing torch.cat([vid, txt]) first (transient full-length copy).
+    def _concat_win(vid, txt):
+        vl = vid.shape[0]
+        n_out = tgt_idx.shape[0]
+        out = vid.new_empty((n_out,) + tuple(vid.shape[1:]))
+        sel_vid = tgt_idx < vl
+        sel_txt = ~sel_vid
+        if sel_vid.any():
+            out[sel_vid] = vid.index_select(0, tgt_idx[sel_vid])
+        if sel_txt.any():
+            out[sel_txt] = txt.index_select(0, tgt_idx[sel_txt] - vl)
+        return out
+
     return (
-        lambda vid, txt: torch.index_select(torch.cat([vid, txt]), 0, tgt_idx),
+        _concat_win,
         lambda all: torch.index_select(all, 0, src_idx).split([vid_idx_len, len(txt_idx)]),
     )
 
