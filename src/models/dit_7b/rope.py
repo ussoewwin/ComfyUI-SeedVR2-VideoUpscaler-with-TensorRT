@@ -70,6 +70,25 @@ class RotaryEmbedding3d(RotaryEmbeddingBase):
         return q, k
 
 
+def _rope_apply_inplace(t, freqs):
+    """In-place interleaved rotary for (h, L, d); equivalent to
+    apply_rotary_emb(freqs, t) when rot_dim == d, without its transient buffers."""
+    rot = freqs.shape[-1]
+    d = t.shape[-1]
+    if rot != d or d % 2 != 0:
+        return apply_rotary_emb(freqs, t)
+    cos = freqs.cos().to(t.dtype).unsqueeze(0)
+    sin = freqs.sin().to(t.dtype).unsqueeze(0)
+    if not t.is_contiguous():
+        t = t.contiguous()
+    t2 = t.view(*t.shape[:-1], d // 2, 2)
+    t_even = t2[..., 0].clone()
+    t_odd = t2[..., 1].clone()
+    t2[..., 0].copy_(t_even * cos[..., 0::2] - t_odd * sin[..., 0::2])
+    t2[..., 1].copy_(t_odd * cos[..., 1::2] + t_even * sin[..., 1::2])
+    return t
+
+
 class NaRotaryEmbedding3d(RotaryEmbedding3d):
     def forward(
         self,
@@ -85,12 +104,12 @@ class NaRotaryEmbedding3d(RotaryEmbedding3d):
         freqs = freqs.to(device=q.device, dtype=q.dtype)
         q = rearrange(q, "L h d -> h L d")
         k = rearrange(k, "L h d -> h L d")
-        # __ROPE_NO_FP32__: apply_rotary_emb preserves the input dtype
-        # (it returns out.type(dtype)), so forcing fp32 here only allocated two
-        # full fp32 copies of q/k (measured peak +3.37 GiB) for a rounding-level
-        # difference (cos 0.999997 vs the fp32 path). Apply in the native dtype.
-        q = apply_rotary_emb(freqs, q)
-        k = apply_rotary_emb(freqs, k)
+        # __W4A8_MEM__: apply rotary in-place instead of apply_rotary_emb's
+        # (t*cos, rotate_half, t*sin, sum, cat) chain, which transiently holds
+        # ~5x a full q/k buffer. rot_dim == d here (no left/right remainder), so
+        # the cat only concatenates empty slices. Same interleaved-pair math.
+        q = _rope_apply_inplace(q, freqs)
+        k = _rope_apply_inplace(k, freqs)
         q = rearrange(q, "h L d -> L h d")
         k = rearrange(k, "h L d -> L h d")
         return q, k

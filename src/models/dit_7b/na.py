@@ -416,10 +416,25 @@ def repeat_concat_idx(
         
         return vid_out, torch.cat(txt_out_coalesced)
 
-    # Use torch.index_select for memory-efficient gathering.
-    # index_select writes directly to output buffer without intermediate fancy-index copy.
+    # __W4A8_MEM__: avoid materializing torch.cat([vid, txt]) (a full-length copy)
+    # only to gather from it. tgt_idx addresses the concatenated [vid; txt], so split
+    # the indices and index_select straight from vid / txt into ONE output buffer.
+    # Removes the transient (vl+tl)-row buffer that previously lived alongside the
+    # gathered output (measured as the largest DiT activation allocation).
+    def _concat_win(vid, txt):
+        vl = vid.shape[0]
+        n_out = tgt_idx.shape[0]
+        out = vid.new_empty((n_out,) + tuple(vid.shape[1:]))
+        sel_vid = tgt_idx < vl
+        sel_txt = ~sel_vid
+        if sel_vid.any():
+            out[sel_vid] = vid.index_select(0, tgt_idx[sel_vid])
+        if sel_txt.any():
+            out[sel_txt] = txt.index_select(0, tgt_idx[sel_txt] - vl)
+        return out
+
     return (
-        lambda vid, txt: torch.index_select(torch.cat([vid, txt]), 0, tgt_idx),
+        _concat_win,
         lambda all: unconcat_coalesce(all),
     )
 
