@@ -72,28 +72,123 @@ def _mark_dit_locked(o):
 
 def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> Any:
     """
-    W4A8 ops: core-native LOADING + self convrot FORWARD.
+    Return comfy.ops mixed-precision operations for W4A8 DiT loads.
 
-    ComfyUI core supports the asym_w4a8_int8 *pack* natively (its
-    _load_quantized_module builds the AsymW4A8Int8Layout QuantizedTensor), but its
-    forward dispatch cannot do the ConvRot rotation. So:
-      - loading goes through core's mixed_precision_ops -> DisTorch2 CPU offload
-        works exactly like INT8 (weight stays on the donor device, streamed per
-        forward via comfy_cast_weights).
-      - compute is our own _forward (self convrot kernel), installed below.
+    Loader approach adopted from starsFriday/ComfyUI-W4A8-Loader (nodes.py):
+    instead of relying on comfy.ops._load_quantized_module, each W4A8 Linear
+    implements its own ``_load_from_state_dict`` that pops ``comfy_quant`` and the
+    companion tensors (weight_s_rel / weight_s_channel / weight_codebook /
+    weight_correction) and builds the QuantizedTensor directly. Non-W4A8 layers
+    fall through to the parent path unchanged.
     """
+    import json as _json
     import comfy.ops as comfy_ops
+    import comfy.quant_ops as comfy_quant_ops
 
-    # W4A8-only memory-efficient convrot forward (GEMM side only).
+    _FORMAT = "asym_w4a8_int8"
+    _LAYOUT = "AsymW4A8Int8Layout"
+
+    from comfy_kitchen.tensor import AsymW4A8Int8Layout as _Layout
+    comfy_quant_ops.register_layout_class(_LAYOUT, _Layout)
+    # __W4A8_SELF__: do NOT overwrite the GLOBAL QUANT_ALGOS entry. ComfyUI core
+    # ships its own native asym_w4a8_int8 registry entry (parameters={weight_scale});
+    # overwriting it pollutes the shared registry and makes core's own
+    # _load_quantized_module register duplicate companion params (extra resident
+    # memory). The self loader below builds the QuantizedTensor itself and does
+    # not need the overwrite.
+
+    def _decode(value):
+        return _json.loads(value.detach().cpu().numpy().tobytes())
+
+    # __W4A8_EFFICIENT_FORWARD__: install the W4A8-only memory-efficient forward
+    # before the layers are created, so every W4A8 linear uses it in Phase 2.
     install_efficient_w4a8_forward()
 
-    ops = comfy_ops.mixed_precision_ops(
-        quant_config={},
+    base_ops = comfy_ops.mixed_precision_ops(
+        quant_config={"mixed_ops": True},
         compute_dtype=compute_dtype,
         full_precision_mm=False,
         disabled=[],
     )
 
+    class W4A8Operations(base_ops):
+        class Linear(base_ops.Linear):
+            def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
+                                      missing_keys, unexpected_keys, error_msgs):
+                config_key = f"{prefix}comfy_quant"
+                config_value = state_dict.get(config_key)
+                if config_value is None or _decode(config_value).get("format") != _FORMAT:
+                    return super()._load_from_state_dict(
+                        state_dict, prefix, local_metadata, strict,
+                        missing_keys, unexpected_keys, error_msgs)
+
+                config = _decode(state_dict.pop(config_key))
+                weight_key = f"{prefix}weight"
+                weight = state_dict.pop(weight_key, None)
+                if weight is None:
+                    raise ValueError(f"Missing W4A8 weight for layer {prefix.rstrip('.')}")
+
+                device = self.factory_kwargs["device"]
+                compute_dtype = self.factory_kwargs["dtype"]
+                loaded_keys = [config_key, weight_key]
+
+                def pop_required(name, dtype=None):
+                    key = f"{prefix}{name}"
+                    value = state_dict.pop(key, None)
+                    if value is None:
+                        raise ValueError(f"Missing W4A8 tensor {key}")
+                    loaded_keys.append(key)
+                    value = value.to(device=device)
+                    if dtype is not None and value.dtype != dtype:
+                        value = value.view(dtype)
+                    return value
+
+                def pop_optional(name):
+                    key = f"{prefix}{name}"
+                    value = state_dict.pop(key, None)
+                    if value is not None:
+                        loaded_keys.append(key)
+                        value = value.to(device=device)
+                    return value
+
+                params_config = config.get("params", {})
+                if not isinstance(params_config, dict):
+                    params_config = {}
+                params = _Layout.Params(
+                    scale=pop_required("weight_s_rel", torch.float8_e4m3fn),
+                    s_channel=pop_required("weight_s_channel"),
+                    correction=pop_optional("weight_correction"),
+                    codebook=pop_optional("weight_codebook"),
+                    group_size=int(config.get("group_size", params_config.get("group_size", 16))),
+                    convrot_groupsize=int(config.get(
+                        "convrot_groupsize", params_config.get("convrot_groupsize", 256))),
+                    orig_dtype=compute_dtype,
+                    orig_shape=self._orig_shape,
+                )
+                self.quant_format = _FORMAT
+                self.layout_type = _LAYOUT
+                self._full_precision_mm_config = config.get("full_precision_matrix_mult", False)
+                if not self._full_precision_mm:
+                    self._full_precision_mm = self._full_precision_mm_config
+                self.weight = torch.nn.Parameter(
+                    comfy_quant_ops.QuantizedTensor(
+                        weight.to(device=device, dtype=torch.int8), _LAYOUT, params),
+                    requires_grad=False,
+                )
+                # __W4A8_OFFLOAD__: do NOT set comfy_cast_weights here. DisTorch2
+                # sets it itself (apply_distorch2_placement) for the modules it
+                # places on the donor device; pre-setting it in the loader would
+                # pre-empt / override that placement decision. We leave device
+                # placement entirely to DisTorch2, exactly like INT8.
+
+                torch.nn.Module._load_from_state_dict(
+                    self, state_dict, prefix, local_metadata, strict,
+                    missing_keys, unexpected_keys, error_msgs)
+                for key in loaded_keys:
+                    if key in missing_keys:
+                        missing_keys.remove(key)
+
+    ops = W4A8Operations
     _BaseLinear = ops.Linear
     _act_dtype = compute_dtype if compute_dtype in (torch.float16, torch.bfloat16) else torch.float16
 
@@ -109,9 +204,11 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
             return super().forward(input, *args, **kwargs)
 
         def _forward(self, input, weight, bias):
-            # __W4A8_SELF_FORWARD__: compute with OUR OWN convrot kernel. Core has
-            # already streamed the (offloaded) weight onto the compute device via
-            # forward_comfy_cast_weights, so DisTorch2 offload is untouched here.
+            # __W4A8_SELF_FORWARD__: run the W4A8 linear with OUR OWN convrot
+            # kernel, independent of comfy core's W4A8 layout dispatch. Core's
+            # forward_comfy_cast_weights already streamed the weight onto
+            # input.device (DisTorch2 offload), so offload is preserved; only the
+            # compute is replaced.
             p = getattr(weight, "_params", None)
             if (
                 type(weight).__name__ == "QuantizedTensor"
@@ -130,6 +227,7 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
                     convrot_groupsize=int(getattr(p, "convrot_groupsize", 256)),
                     out_dtype=getattr(p, "orig_dtype", input.dtype),
                 )
+            # Streamed/dequantized weight (non-quantized): regular linear.
             return torch.nn.functional.linear(input, weight, bias)
 
     ops.Linear = _mark_dit_locked(Linear)
