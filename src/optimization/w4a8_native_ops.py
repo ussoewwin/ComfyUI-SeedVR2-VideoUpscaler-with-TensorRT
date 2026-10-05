@@ -204,24 +204,42 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
             return super().forward(input, *args, **kwargs)
 
         def _forward(self, input, weight, bias):
-            # __W4A8_SELF_FORWARD__: run the W4A8 linear with OUR OWN convrot
-            # kernel, independent of comfy core's W4A8 layout dispatch. Core's
-            # forward_comfy_cast_weights already streamed the weight onto
-            # input.device (DisTorch2 offload), so offload is preserved; only the
-            # compute is replaced.
+            # __W4A8_SELF_FORWARD__: our own convrot compute, coexisting with
+            # DisTorch2 CPU offload. DisTorch2 leaves the weight on the donor
+            # device (CPU); we move it to the compute device ONLY for this
+            # forward, compute with the self convrot kernel, then it goes back to
+            # the donor device. The weight is never resident on GPU between
+            # forwards, so offload is preserved. comfy_cast_weights is NOT forced
+            # here (DisTorch2 owns placement).
             p = getattr(weight, "_params", None)
             if (
                 type(weight).__name__ == "QuantizedTensor"
                 and getattr(weight, "_layout_cls", None) == _LAYOUT
                 and p is not None
             ):
+                compute_dev = input.device
+                moved = weight._qdata.device != compute_dev
+                qdata = weight._qdata
+                scale = p.scale
+                s_channel = getattr(p, "s_channel", None)
+                codebook = getattr(p, "codebook", None)
+                correction = getattr(p, "correction", None)
+                if moved:
+                    qdata = qdata.to(compute_dev)
+                    scale = scale.to(compute_dev)
+                    if s_channel is not None:
+                        s_channel = s_channel.to(compute_dev)
+                    if codebook is not None:
+                        codebook = codebook.to(compute_dev)
+                    if correction is not None:
+                        correction = correction.to(compute_dev)
                 return _efficient_w4a8_linear(
                     input,
-                    weight._qdata,
-                    p.scale,
-                    getattr(p, "s_channel", None),
-                    codebook=getattr(p, "codebook", None),
-                    correction=getattr(p, "correction", None),
+                    qdata,
+                    scale,
+                    s_channel,
+                    codebook=codebook,
+                    correction=correction,
                     bias=bias,
                     group_size=int(getattr(p, "group_size", 16)),
                     convrot_groupsize=int(getattr(p, "convrot_groupsize", 256)),
