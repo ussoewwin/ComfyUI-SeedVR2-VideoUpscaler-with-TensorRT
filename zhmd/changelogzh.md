@@ -76,7 +76,7 @@
   - **对齐 Studio 的静态形状判定：** 仅在当前形状与目标分块形状不符时才调用 `context.set_input_shape`。静态形状引擎完全跳过冗余重构，防止 TRT 内部暂存区缓冲区重新分配并抓取前序脏显存。
   - **确定性 Dummy 热身空跑：** 在进入空间分块循环前，使用全零张量执行一次单次 Dummy 推理。强制 TensorRT 清洗所有内部卷积工作区和时序累加器状态，彻底杜绝首个分块（`y=0, x=0`）读取未初始化内存。
   - **零显存膨胀架构：** 坚决摒弃会导致 float32 累加缓冲区（`result` 与 `weights`）显存激增 2~3 倍的外周 Padding 方案，保持原生分辨率最高解码速度与最小显存开销。
-- **技术详情：** 请参阅 [v1.5.4 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/blob/main/zhmd/v1.5.4.md) 获取完整说明
+- **技术详情：** 请参阅 [v1.5.4 发行说明](v1.5.4.md) 获取完整说明
 
 ## v1.5.3 — 2026-09-09
 - **摘要：** TensorRT VAE 编码器启用未成功；FP16 VAE 编码保持不变：
