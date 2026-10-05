@@ -22,7 +22,7 @@
     从未违反内核的定长前提。
   - **备注：** 曾尝试实验性的持久化 Triton 缓存并已回退；spargeattn 路径保持经实测确认的正确状态
     （无持久化缓存计装）。
-- **技术详情：** 参见 [v1.6.1 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.1) 获取完整说明
+- **技术详情：** 参见 [v1.6.1 发行说明](v1.6.1.md) 获取完整说明
 
 ## v1.6.0 — 2026-10-03
 - **摘要：** 新增 DisTorch2 DiT 加载器节点与 Phase 2 显存控制：
@@ -38,7 +38,7 @@
     节省常驻显存；输出逐位相同）。
   - **模型注册表：** 移除 fp8 DiT 条目（3B / 7B / 7B sharp）；
     默认 DiT 现为 `seedvr2_7b_int8_convrot.safetensors`。
-- **技术详情：** 参见 [v1.6.0 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.0) 获取完整说明
+- **技术详情：** 参见 [v1.6.0 发行说明](v1.6.0.md) 获取完整说明
 
 ## v1.5.8 — 2026-10-02
 - **摘要：** TensorRT VAE 权重精度优化（解码器 + 编码器）：
@@ -46,7 +46,7 @@
     `result` 累积缓冲区保持 FP32 并保留 4D 输出契约，在不影响输出精度的前提下削减权重常驻显存。
   - **验证一致性：** 在 RTX 5060 Ti 上确认多次运行稳定 — 解码器 PSNR 84–85 dB，
     编码器 PSNR 72.4 dB（对比 FP32 基准）。
-- **技术详情：** 参见 [v1.5.8 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.5.8) 获取完整说明
+- **技术详情：** 参见 [v1.5.8 发行说明](v1.5.8.md) 获取完整说明
 
 ## v1.5.7 — 2026-09-30
 - **摘要：** DiT 执行显存瞬时峰值抑制与激活中间张量显存稳定性优化：
