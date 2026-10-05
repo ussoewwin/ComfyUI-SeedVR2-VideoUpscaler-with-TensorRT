@@ -797,10 +797,13 @@ def upscale_all_batches(
             )
             debug.start_timer(f"dit_inference_{upscale_idx+1}")
             with torch.no_grad():
-                import os as _os_ac
-                _ac_w4a8 = _os_ac.environ.get('SEEDVR2_W4A8_AUTOCAST') == '1'
+                # __W4A8_INT8_PARITY__: W4A8 follows the exact same autocast path as
+                # INT8 (both are quantize_input=False packs on the core mixed-precision
+                # Linear). Only NVFP4 keeps its autocast skip (its CUDA quantize
+                # rejects float32 code 0). This removes the W4A8-only fp32
+                # activation residency (norm/rope) that INT8 never has.
                 use_autocast = (
-                    not (nvfp4_native or (w4a8_native and not _ac_w4a8))
+                    not nvfp4_native
                     and dit_dtype != ctx['compute_dtype']
                     and ctx['dit_device'].type != 'mps'
                 )
