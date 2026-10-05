@@ -283,12 +283,6 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
         config = {
             "model": model,
             "device": device,
-            # __W4A8_OFFLOAD__: the DiT must materialize on the DisTorch2 donor
-            # device (CPU) BEFORE placement, like the non-DisTorch2 loader does via
-            # its offload_device input. video_upscaler reads dit.get("offload_device");
-            # exposing the donor here makes dit_offload_device the CPU, so weights go
-            # to host RAM and VRAM stays low. donor_device is the node's own value.
-            "offload_device": str(donor_device),
             "attention_mode": attention_mode,
             "sparge_topk": sparge_topk,
             "torch_compile_args": torch_compile_args,
