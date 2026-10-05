@@ -31,22 +31,18 @@ logger = logging.getLogger("MultiGPU")
 def _is_w4a8_quant(t) -> bool:
     """__W4A8_SUPPORT__: True only for an asym_w4a8_int8 QuantizedTensor.
 
-    W4A8 is identified by its ComfyUI layout tag (``AsymW4A8Int8Layout``), NOT by
-    a width heuristic. A packed int4 (W4A8) and a packed fp4 (NVFP4) BOTH halve
-    the last dim, so a `_qdata.shape[1] * 2 == weight.shape[1]` test also matches
-    NVFP4 and would MERGE the two formats. This discriminator keeps W4A8 fully
-    separate: INT8 (TensorWiseINT8Layout) and NVFP4 (TensorCoreNVFP4Layout) never
-    match.
+    W4A8 packs the weight as int4, so `_qdata` is half the logical row width
+    (`_qdata.shape[1] * 2 == weight.shape[1]`). INT8 (int8_tensorwise) stores a
+    full-width `_qdata` and never matches; NVFP4 does not either. This is an
+    explicit discriminator, kept SEPARATE from the generic size path.
     """
-    if getattr(t, "_layout_cls", None) == "AsymW4A8Int8Layout":
-        return True
-    # Fallback for a W4A8 tensor that somehow lacks its layout tag: require the
-    # asym-W4A8 Params schema (per-group `scale` + per-channel `s_channel` +
-    # `group_size`). No other layout carries that combination.
-    p = getattr(t, "_params", None)
-    if p is None:
+    q = getattr(t, "_qdata", None)
+    if q is None or getattr(q, "dim", lambda: 0)() != 2:
         return False
-    return all(hasattr(p, a) for a in ("scale", "s_channel", "group_size"))
+    wshp = getattr(t, "shape", None)
+    if wshp is None or len(wshp) != 2:
+        return False
+    return int(q.shape[1]) * 2 == int(wshp[1])
 
 
 def _w4a8_storage_bytes(t) -> int:
