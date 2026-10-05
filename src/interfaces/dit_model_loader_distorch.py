@@ -24,7 +24,7 @@ from ..optimization.memory_manager import get_device_list
 
 logger = logging.getLogger("SeedVR2.DiTorch2")
 
-_QUANTIZED_TAGS = ("int8", "nvfp4", "convrot", "fp8", "int4")
+_QUANTIZED_TAGS = ("int8", "nvfp4", "convrot", "fp8", "int4", "w4a8", "w4a4", "w6a8")
 
 
 def _looks_quantized(model_name: str) -> bool:
