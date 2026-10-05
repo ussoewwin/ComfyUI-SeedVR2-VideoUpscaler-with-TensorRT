@@ -28,6 +28,25 @@ from ..optimization.memory_manager import clear_memory
 logger = logging.getLogger("MultiGPU")
 
 
+def _move_w4a8_params(qt, device) -> None:
+    """__W4A8_SUPPORT__: move a W4A8 QuantizedTensor's companion tensors to device.
+
+    Companion tensors live in qt._params (not registered parameters), so
+    module.to() does not move them. This keeps them on the same device as
+    _qdata for the per-forward stream. W4A8-only.
+    """
+    params = getattr(qt, "_params", None)
+    if params is None:
+        return
+    for attr in ("scale", "s_channel", "correction", "codebook"):
+        v = getattr(params, attr, None)
+        if v is not None and hasattr(v, "to"):
+            try:
+                setattr(params, attr, v.to(device))
+            except Exception:
+                pass
+
+
 def _is_w4a8_quant(t) -> bool:
     """__W4A8_SUPPORT__: True only for an asym_w4a8_int8 QuantizedTensor.
 
@@ -299,8 +318,20 @@ def apply_distorch2_placement(model: torch.nn.Module,
         except StopIteration:
             continue
         if str(current) != str(target):
-            module.to(target)
-            module.comfy_cast_weights = True  # upstream Step-4 flag: stream per forward
+            w = getattr(module, "weight", None)
+            if _is_w4a8_quant(w):
+                # __W4A8_SUPPORT__: move a W4A8 QuantizedTensor module to the
+                # donor device explicitly. module.to() goes through Parameter
+                # _apply, but a QuantizedTensor's companion tensors
+                # (_params.scale/s_channel/correction/codebook) are NOT registered
+                # parameters, so they must be moved together, otherwise the
+                # stream-per-forward cast has to fetch them from the wrong device.
+                module.to(target)
+                _move_w4a8_params(w, target)
+                module.comfy_cast_weights = True
+            else:
+                module.to(target)
+                module.comfy_cast_weights = True  # upstream Step-4 flag: stream per forward
             moved += 1
             per_device[str(target)] = per_device.get(str(target), 0) + 1
 
