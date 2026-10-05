@@ -198,6 +198,33 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
                 input = input.to(dtype=_act_dtype)
             return super().forward(input, *args, **kwargs)
 
+        def _forward(self, input, weight, bias):
+            # __W4A8_SELF_FORWARD__: run the W4A8 linear with OUR OWN convrot
+            # kernel, independent of comfy core's W4A8 layout dispatch. Core's
+            # forward_comfy_cast_weights already streamed the weight onto
+            # input.device (DisTorch2 offload), so offload is preserved; only the
+            # compute is replaced.
+            if (
+                isinstance(weight, torch.Tensor)
+                and type(weight).__name__ == "QuantizedTensor"
+                and getattr(weight, "_layout_cls", None) == _LAYOUT
+            ):
+                params = getattr(weight, "_params", None)
+                if params is not None:
+                    return _efficient_w4a8_linear(
+                        input,
+                        weight._qdata,
+                        params.scale,
+                        params.s_channel,
+                        codebook=getattr(params, "codebook", None),
+                        correction=getattr(params, "correction", None),
+                        bias=bias,
+                        group_size=int(getattr(params, "group_size", 16)),
+                        convrot_groupsize=int(getattr(params, "convrot_groupsize", 256)),
+                        out_dtype=getattr(params, "orig_dtype", input.dtype),
+                    )
+            return super()._forward(input, weight, bias)
+
     ops.Linear = _mark_dit_locked(Linear)
     return ops
 
