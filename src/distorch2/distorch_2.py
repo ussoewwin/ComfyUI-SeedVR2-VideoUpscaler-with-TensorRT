@@ -575,6 +575,29 @@ def analyze_safetensor_loading(model_patcher, allocations_string, is_clip=False)
         "block_assignments": block_assignments
     }
 
+def _is_w4a8_quant(t) -> bool:
+    """__W4A8_SUPPORT__: True only for an asym_w4a8_int8 QuantizedTensor."""
+    if getattr(t, "_layout_cls", None) == "AsymW4A8Int8Layout":
+        return True
+    p = getattr(t, "_params", None)
+    if p is None:
+        return False
+    return all(hasattr(p, a) for a in ("scale", "s_channel", "group_size"))
+
+
+def _w4a8_storage_bytes(t) -> int:
+    """__W4A8_SUPPORT__: real packed storage bytes of a W4A8 QuantizedTensor."""
+    q = t._qdata
+    total = q.numel() * q.element_size()
+    params = getattr(t, "_params", None)
+    if params is not None:
+        for attr in ("scale", "s_channel", "correction", "codebook"):
+            v = getattr(params, attr, None)
+            if v is not None and hasattr(v, "numel"):
+                total += v.numel() * v.element_size()
+    return total
+
+
 def parse_memory_string(mem_str):
     """Parses a memory string (e.g., '4.0g', '512M') and returns bytes."""
     mem_str = mem_str.strip().lower()
@@ -751,7 +774,16 @@ def calculate_safetensor_vvram_allocation(model_patcher, virtual_vram_str):
     for name, module in model.named_modules():
         if hasattr(module, "weight"):
             if module.weight is not None:
-                total_memory += module.weight.numel() * module.weight.element_size()
+                # __W4A8_SUPPORT__: numeric size for a W4A8 QuantizedTensor must use
+                # its real packed storage (_qdata [+ companion tensors]), because
+                # numel()*element_size() uses the LOGICAL dtype and overstates the
+                # int4 pack (it reads ~2x). W4A8-only; every other format keeps the
+                # original expression.
+                w = module.weight
+                if _is_w4a8_quant(w):
+                    total_memory += _w4a8_storage_bytes(w)
+                else:
+                    total_memory += w.numel() * w.element_size()
             if hasattr(module, "bias") and module.bias is not None:
                 total_memory += module.bias.numel() * module.bias.element_size()
 
