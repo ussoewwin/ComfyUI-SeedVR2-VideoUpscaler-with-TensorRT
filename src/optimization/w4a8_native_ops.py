@@ -211,9 +211,16 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
             # context we run OUR OWN convrot kernel, so offload (DisTorch2) and
             # the self forward coexist. The weight is never left resident on GPU.
             import comfy.ops as _co
+            # Mirror core's weight_only_quant branch (W4A8 has quantize_input=False):
+            # cast with input=None so the QuantizedTensor weight is streamed to the
+            # compute device (offload) and kept quantized (_dit_quant_lock), then
+            # compute with our own convrot kernel.
             with _co.CastBiasWeightContext(
                 self,
-                input,
+                input=None,
+                dtype=self.weight.dtype,
+                device=input.device,
+                bias_dtype=input.dtype,
                 offloadable=True,
                 compute_dtype=_act_dtype,
                 want_requant=True,
