@@ -14,6 +14,7 @@
 
 from typing import Tuple, Union
 import torch
+import os as _os
 from einops import rearrange
 from torch.nn import functional as F
 
@@ -30,6 +31,18 @@ from ..normalization import norm_layer_type
 from ..rope import NaRotaryEmbedding3d
 from ..window import get_window_op
 from ....common.half_precision_fixes import safe_pad_operation
+
+# _seedvr2_attn_mem
+def _seedvr2_attn_mem(tag):
+    try:
+        import torch as _t
+        _t.cuda.synchronize()
+        print(f"[ATTMEM {tag}] alloc={_t.cuda.memory_allocated()/1024**3:.2f} "
+              f"peak={_t.cuda.max_memory_allocated()/1024**3:.2f} "
+              f"reserved={_t.cuda.memory_reserved()/1024**3:.2f} GiB", flush=True)
+    except Exception as e:
+        print(f"[ATTMEM {tag}] err {e}", flush=True)
+
 
 class NaSwinAttention(MMWindowAttention):
     def __init__(
@@ -79,7 +92,11 @@ class NaSwinAttention(MMWindowAttention):
         torch.FloatTensor,
     ]:
 
+        _ap = getattr(self, "_seedvr2_attn_probe", False) is False
+        self._seedvr2_attn_probe = True
+        if _ap: _seedvr2_attn_mem("start")
         vid_qkv, txt_qkv = self.proj_qkv(vid, txt)
+        if _ap: _seedvr2_attn_mem("proj_qkv")
         vid_qkv = gather_seq_scatter_heads_qkv(
             vid_qkv,
             seq_dim=0,
@@ -105,7 +122,9 @@ class NaSwinAttention(MMWindowAttention):
             "win_transform",
             lambda: na.window_idx(vid_shape, make_window),
         )
+        if _ap: _seedvr2_attn_mem("before_window_partition")
         vid_qkv_win = window_partition(vid_qkv)
+        if _ap: _seedvr2_attn_mem("after_window_partition")
 
         vid_qkv_win = rearrange(vid_qkv_win, "l (o h d) -> l o h d", o=3, d=self.head_dim)
         txt_qkv = rearrange(txt_qkv, "l (o h d) -> l o h d", o=3, d=self.head_dim)
@@ -125,13 +144,18 @@ class NaSwinAttention(MMWindowAttention):
             "mm_pnp", lambda: na.repeat_concat_idx(vid_len_win, txt_len, window_count)
         )
 
+        if _ap: _seedvr2_attn_mem("before_rope")
         # window rope
         if self.rope:
             vid_q, vid_k = self.rope(vid_q, vid_k, window_shape, cache_win)
+        if _ap: _seedvr2_attn_mem("after_rope")
 
         # Attention handles dtype conversion internally using pipeline compute_dtype
+        _q_attn = concat_win(vid_q, txt_q)
+        if _ap:
+            print(f"[ATTSHAPE] q={tuple(_q_attn.shape)} numel={_q_attn.numel()} dtype={_q_attn.dtype}", flush=True)
         out = self.attn(
-            q=concat_win(vid_q, txt_q),
+            q=_q_attn,
             k=concat_win(vid_k, txt_k),
             v=concat_win(vid_v, txt_v),
             cu_seqlens_q=cache_win(
@@ -143,6 +167,7 @@ class NaSwinAttention(MMWindowAttention):
             max_seqlen_q=cache_win("vid_max_seqlen_q", lambda: all_len_win.max()),
             max_seqlen_k=cache_win("vid_max_seqlen_k", lambda: all_len_win.max()),
         ).type_as(vid_q)
+        if _ap: _seedvr2_attn_mem("after_attn")
 
         # text pooling
         vid_out, txt_out = unconcat_win(out)
@@ -154,9 +179,24 @@ class NaSwinAttention(MMWindowAttention):
         vid_out = gather_heads_scatter_seq(vid_out, head_dim=1, seq_dim=0)
         txt_out = gather_heads_scatter_seq(txt_out, head_dim=1, seq_dim=0)
 
+        if _ap: _seedvr2_attn_mem("before_proj_out")
         vid_out, txt_out = self.proj_out(vid_out, txt_out)
+        if _ap: _seedvr2_attn_mem("after_proj_out")
 
         return vid_out, txt_out
+
+
+# _SEEDVR2_BLOCK_MEMPROBE
+def _seedvr2_blk_mem(tag):
+    try:
+        import torch as _t
+        _t.cuda.synchronize()
+        alloc = _t.cuda.memory_allocated()/1024**3
+        peak = _t.cuda.max_memory_allocated()/1024**3
+        resv = _t.cuda.memory_reserved()/1024**3
+        print(f"[BLKMEM {tag}] alloc={alloc:.2f} peak={peak:.2f} reserved={resv:.2f} GiB", flush=True)
+    except Exception as e:
+        print(f"[BLKMEM {tag}] err {e}", flush=True)
 
 
 class NaMMSRTransformerBlock(MMWindowTransformerBlock):
@@ -237,16 +277,27 @@ class NaMMSRTransformerBlock(MMWindowTransformerBlock):
             "branch_tag": MMArg("vid", "txt"),
         }
 
+        _pr = getattr(self, "_seedvr2_probe_logged", False) is False
+        self._seedvr2_probe_logged = True
+        if _pr: _seedvr2_blk_mem("start")
         vid_attn, txt_attn = self.attn_norm(vid, txt)
+        if _pr: _seedvr2_blk_mem("attn_norm")
         vid_attn, txt_attn = self.ada(vid_attn, txt_attn, layer="attn", mode="in", **ada_kwargs)
+        if _pr: _seedvr2_blk_mem("ada_attn_in")
         vid_attn, txt_attn = self.attn(vid_attn, txt_attn, vid_shape, txt_shape, cache)
+        if _pr: _seedvr2_blk_mem("attn")
         vid_attn, txt_attn = self.ada(vid_attn, txt_attn, layer="attn", mode="out", **ada_kwargs)
+        if _pr: _seedvr2_blk_mem("ada_attn_out")
         vid_attn, txt_attn = (vid_attn + vid), (txt_attn + txt)
 
         vid_mlp, txt_mlp = self.mlp_norm(vid_attn, txt_attn)
+        if _pr: _seedvr2_blk_mem("mlp_norm")
         vid_mlp, txt_mlp = self.ada(vid_mlp, txt_mlp, layer="mlp", mode="in", **ada_kwargs)
+        if _pr: _seedvr2_blk_mem("ada_mlp_in")
         vid_mlp, txt_mlp = self.mlp(vid_mlp, txt_mlp)
+        if _pr: _seedvr2_blk_mem("mlp")
         vid_mlp, txt_mlp = self.ada(vid_mlp, txt_mlp, layer="mlp", mode="out", **ada_kwargs)
+        if _pr: _seedvr2_blk_mem("ada_mlp_out")
         vid_mlp, txt_mlp = (vid_mlp + vid_attn), (txt_mlp + txt_attn)
 
         return vid_mlp, txt_mlp, vid_shape, txt_shape

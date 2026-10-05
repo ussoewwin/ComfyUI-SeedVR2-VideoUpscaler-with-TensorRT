@@ -64,8 +64,12 @@ class RotaryEmbedding3d(RotaryEmbeddingBase):
         freqs = self.get_axial_freqs(T, H, W)
         q = rearrange(q, "b h (T H W) d -> b h T H W d", T=T, H=H, W=W)
         k = rearrange(k, "b h (T H W) d -> b h T H W d", T=T, H=H, W=W)
-        q = apply_rotary_emb(freqs, q.float()).to(q.dtype)
-        k = apply_rotary_emb(freqs, k.float()).to(k.dtype)
+        # __ROPE_NO_FP32__: apply_rotary_emb preserves the input dtype
+        # (it returns out.type(dtype)), so forcing fp32 here only allocated two
+        # full fp32 copies of q/k (measured peak +3.37 GiB) for a rounding-level
+        # difference (cos 0.999997 vs the fp32 path). Apply in the native dtype.
+        q = apply_rotary_emb(freqs, q)
+        k = apply_rotary_emb(freqs, k)
         q = rearrange(q, "b h T H W d -> b h (T H W) d")
         k = rearrange(k, "b h T H W d -> b h (T H W) d")
         return q, k
@@ -115,15 +119,15 @@ class NaMMRotaryEmbedding3d(MMRotaryEmbeddingBase):
             txt_freqs = txt_freqs.to(target_device)
         vid_q = rearrange(vid_q, "L h d -> h L d")
         vid_k = rearrange(vid_k, "L h d -> h L d")
-        vid_q = apply_rotary_emb(vid_freqs, vid_q.float()).to(vid_q.dtype)
-        vid_k = apply_rotary_emb(vid_freqs, vid_k.float()).to(vid_k.dtype)
+        vid_q = apply_rotary_emb(vid_freqs, vid_q)
+        vid_k = apply_rotary_emb(vid_freqs, vid_k)
         vid_q = rearrange(vid_q, "h L d -> L h d")
         vid_k = rearrange(vid_k, "h L d -> L h d")
 
         txt_q = rearrange(txt_q, "L h d -> h L d")
         txt_k = rearrange(txt_k, "L h d -> h L d")
-        txt_q = apply_rotary_emb(txt_freqs, txt_q.float()).to(txt_q.dtype)
-        txt_k = apply_rotary_emb(txt_freqs, txt_k.float()).to(txt_k.dtype)
+        txt_q = apply_rotary_emb(txt_freqs, txt_q)
+        txt_k = apply_rotary_emb(txt_freqs, txt_k)
         txt_q = rearrange(txt_q, "h L d -> L h d")
         txt_k = rearrange(txt_k, "h L d -> L h d")
         return vid_q, vid_k, txt_q, txt_k

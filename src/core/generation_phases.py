@@ -190,6 +190,62 @@ def _reconstruct_and_transform_batch(
     return transformed_video
 
 
+# _SEEDVR2_P2_MEMPROBE
+def _seedvr2_p2_memprobe(tag, debug=None):
+    """Phase 2 メモリ内訳を ComfyUI ログへ（W4A8 vs INT8 比較用・一時計装）。"""
+    try:
+        import torch as _t, subprocess as _sp
+        _t.cuda.synchronize()
+        alloc = _t.cuda.memory_allocated()/1024**3
+        resv = _t.cuda.memory_reserved()/1024**3
+        try:
+            drv = int(_sp.check_output(["nvidia-smi","--query-gpu=memory.used","--format=csv,noheader,nounits"]).decode().strip())/1024
+        except Exception:
+            drv = -1.0
+        msg = f"[P2MEM {tag}] torch_alloc={alloc:.2f} reserved={resv:.2f} driver={drv:.2f} GiB"
+        if debug is not None:
+            debug.log(msg, category="memory", force=True)
+        else:
+            print(msg, flush=True)
+        return (alloc, resv, drv)
+    except Exception as e:
+        try: debug.log(f"[P2MEM {tag}] error {e}", category="memory", force=True)
+        except Exception: print(f"[P2MEM {tag}] error {e}", flush=True)
+        return (-1, -1, -1)
+
+
+def _seedvr2_p2_live_breakdown(tag, debug=None):
+    """現在 live な torch テンソルの大物を形状別に集計（W4A8 の重み展開検出用）。"""
+    try:
+        import torch as _t
+        from collections import defaultdict
+        import gc as _gc
+        agg = defaultdict(lambda: [0, 0])
+        for obj in _gc.get_objects():
+            try:
+                if _t.is_tensor(obj) and obj.is_cuda:
+                    sz = obj.numel()*obj.element_size()
+                    if sz < 8*1024*1024:
+                        continue
+                    key = f"shape={tuple(obj.shape)} dtype={obj.dtype}"
+                    agg[key][0] += sz
+                    agg[key][1] += 1
+            except Exception:
+                continue
+        lines = [f"[P2LIVE {tag}] live tensors >=8MB (top)"]
+        for k, (sz, c) in sorted(agg.items(), key=lambda x:-x[1][0])[:14]:
+            lines.append(f"  {sz/1024**2:9.1f} MB x{c}  {k}")
+        if debug is not None:
+            for l in lines:
+                debug.log(l, category="memory", force=True)
+        else:
+            for l in lines:
+                print(l, flush=True)
+    except Exception as e:
+        try: debug.log(f"[P2LIVE {tag}] error {e}", category="memory", force=True)
+        except Exception: pass
+
+
 def encode_all_batches(
     runner: 'VideoDiffusionInfer',
     ctx: Dict[str, Any],
@@ -662,6 +718,8 @@ def upscale_all_batches(
     
     upscale_idx = 0
     
+    _seedvr2_p2_memprobe('phase2_entry', debug)
+    _seedvr2_p2_live_breakdown('phase2_entry', debug)
     try:
         # Materialize DiT if still on meta device
         # Phase 1 locals are now released (function returned); return the allocator's
@@ -795,6 +853,7 @@ def upscale_all_batches(
                 bool(getattr(runner, "_dit_comfy_quant_native", False))
                 and checkpoint_is_w4a8(getattr(runner, "_dit_checkpoint", None))
             )
+            _seedvr2_p2_memprobe(f'batch{upscale_idx+1}_before_dit', debug)
             debug.start_timer(f"dit_inference_{upscale_idx+1}")
             with torch.no_grad():
                 use_autocast = (
@@ -816,6 +875,7 @@ def upscale_all_batches(
                         **ctx['text_embeds'],
                     )
             debug.end_timer(f"dit_inference_{upscale_idx+1}", f"DiT inference {upscale_idx+1}")
+            _seedvr2_p2_memprobe(f'batch{upscale_idx+1}_after_dit', debug)
 
             # First batch carries all torch.compile work for this phase; free
             # parallel-compile workers (they hold CUDA contexts) afterwards.

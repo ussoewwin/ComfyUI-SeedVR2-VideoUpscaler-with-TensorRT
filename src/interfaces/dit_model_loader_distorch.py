@@ -41,14 +41,20 @@ def build_distorch2_allocation_string(compute_device: str,
         "<expert_mode_allocations>#<compute_device>;<virtual_vram_gb>;<donor_device>"
     or "<compute_device>" when only a block allocation is given.
     """
-    vram_string = ""
+    # __W4A8_SUPPORT__: always emit a vram-format string so every quantized pack
+    # (INT8 / NVFP4 / W4A8) is routed through the SAME packed-size placement
+    # bridge in distorch2_placement. Returning "" sent the pack to the upstream
+    # calculator, whose size check uses weight.numel()*element_size() (the LOGICAL
+    # dtype size - for a W4A8 int4 pack that is 4x too large), so W4A8 did not
+    # receive the same distorch2 treatment as INT8/NVFP4. Callers that already
+    # pass a value are unaffected; only the previously-empty case changes.
     if virtual_vram_gb and virtual_vram_gb > 0:
         vram_string = f"{compute_device};{virtual_vram_gb};{donor_device}"
     elif expert_mode_allocations:
         vram_string = compute_device
-    if expert_mode_allocations or vram_string:
-        return f"{expert_mode_allocations}#{vram_string}"
-    return ""
+    else:
+        vram_string = f"{compute_device};{float(virtual_vram_gb or 0.0)};{donor_device}"
+    return f"{expert_mode_allocations}#{vram_string}"
 
 
 def _register_distorch2_backend():

@@ -73,7 +73,7 @@ def resolve_dit_config_folder(dit_model: str) -> str:
     """
     Resolve configs_7b vs configs_3b from registry size and/or filename.
 
-    Filename substring \"7b\"/\"3b\" is the historical rule. Registry size is used
+    Filename substring "7b"/"3b" is the historical rule. Registry size is used
     when the model is registered (including HSWQ INT8 names). Prefer explicit
     7b/3b tokens in the basename so untagged temp names do not silently pick 3B.
     """

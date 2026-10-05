@@ -85,8 +85,12 @@ class NaRotaryEmbedding3d(RotaryEmbedding3d):
         freqs = freqs.to(device=q.device, dtype=q.dtype)
         q = rearrange(q, "L h d -> h L d")
         k = rearrange(k, "L h d -> h L d")
-        q = apply_rotary_emb(freqs, q.float()).to(q.dtype)
-        k = apply_rotary_emb(freqs, k.float()).to(k.dtype)
+        # __ROPE_NO_FP32__: apply_rotary_emb preserves the input dtype
+        # (it returns out.type(dtype)), so forcing fp32 here only allocated two
+        # full fp32 copies of q/k (measured peak +3.37 GiB) for a rounding-level
+        # difference (cos 0.999997 vs the fp32 path). Apply in the native dtype.
+        q = apply_rotary_emb(freqs, q)
+        k = apply_rotary_emb(freqs, k)
         q = rearrange(q, "h L d -> L h d")
         k = rearrange(k, "h L d -> L h d")
         return q, k

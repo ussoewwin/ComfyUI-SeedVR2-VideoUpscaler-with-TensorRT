@@ -120,8 +120,12 @@ class FlashAttentionVarlen(nn.Module):
 
     def forward(self, q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, **kwargs):
         kwargs["deterministic"] = torch.are_deterministic_algorithms_enabled()
+        if not getattr(self, "_ftm_logged", False):
+            self._ftm_logged = True
+            print(f"[FTM] mode={self.attention_mode} compute_dtype={self.compute_dtype} "
+                  f"q_in={q.dtype} q_shape={tuple(q.shape)}", flush=True)
         
-        # Convert to pipeline compute_dtype if configured (handles FP8 → fp16/bf16)
+        # Convert to pipeline compute_dtype if configured (handles FP8 -> fp16/bf16)
         if self.compute_dtype is not None and q.dtype != self.compute_dtype:
             q = q.to(self.compute_dtype)
             k = k.to(self.compute_dtype)

@@ -36,6 +36,35 @@ class NaDiTOutput:
     vid_sample: torch.Tensor
 
 
+# _SEEDVR2_DIT_MEMPROBE
+def _seedvr2_dit_mem(tag):
+    """DiT forward 中のメモリ内訳を print（一時計装）。"""
+    try:
+        import torch as _t
+        from collections import defaultdict
+        import gc as _gc
+        _t.cuda.synchronize()
+        alloc = _t.cuda.memory_allocated()/1024**3
+        peak = _t.cuda.max_memory_allocated()/1024**3
+        agg = defaultdict(lambda: [0, 0])
+        for obj in _gc.get_objects():
+            try:
+                if _t.is_tensor(obj) and obj.is_cuda:
+                    sz = obj.numel()*obj.element_size()
+                    if sz < 32*1024*1024:
+                        continue
+                    key = f"{tuple(obj.shape)} {obj.dtype}"
+                    agg[key][0] += sz
+                    agg[key][1] += 1
+            except Exception:
+                continue
+        print(f"[DITMEM {tag}] alloc={alloc:.2f} peak={peak:.2f} GiB", flush=True)
+        for k, (sz, c) in sorted(agg.items(), key=lambda x:-x[1][0])[:10]:
+            print(f"    {sz/1024**3:7.3f} GiB x{c}  {k}", flush=True)
+    except Exception as e:
+        print(f"[DITMEM {tag}] err {e}", flush=True)
+
+
 class NaDiT(nn.Module):
     """
     Native Resolution Diffusion Transformer (NaDiT)
@@ -179,6 +208,7 @@ class NaDiT(nn.Module):
         emb = self.emb_in(timestep, device=vid.device, dtype=vid.dtype)
 
         # Body
+        _seedvr2_dit_mem('after_inputs')
         cache = Cache(disable=disable_cache)
         for i, block in enumerate(self.blocks):
             vid, txt, vid_shape, txt_shape = gradient_checkpointing(
@@ -191,8 +221,12 @@ class NaDiT(nn.Module):
                 emb=emb,
                 cache=cache,
             )
+            if i in (0, 5, 17, 35):
+                _seedvr2_dit_mem(f'block{i}_done')
 
+        _seedvr2_dit_mem('before_vid_out')
         vid, vid_shape = self.vid_out(vid, vid_shape, cache)
+        _seedvr2_dit_mem('after_vid_out')
         return NaDiTOutput(vid_sample=vid)
 
 
