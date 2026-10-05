@@ -7,6 +7,23 @@
 
 # 更新日志
 
+## v1.6.1 — 2026-10-05
+- **摘要：** v1.6.0 以来的 SpargeAttn 提速工作 —— spargeattn 后端现已完整跑通其每次调用的路径，
+  去除了此前使其慢于 SageAttention2 的固定开销：
+  - **Sage2++ fp16 累加路径：** 修复 ragged-window 路径，并将 spargeattn 路由至
+    SageAttention2++ 的 fp16 累加内核（进化形态），不再回退到较慢的 f32 累加内核。
+  - **等长窗口批处理（零拷贝）：** 将连续等长窗口合并进 stock API 调用，
+    去除逐窗口的 Python/启动开销，且不改变结果。
+  - **去除每次调用的 D2H 同步：** 移除 spargeattn 快速路径中每次调用的主机同步
+    （plan-cache 以 shape/numel 为键），快速路径实现零 device-to-host 同步。
+  - **变长（varlen）委托：** spargeattn 的 varlen 处理现委托给 SpargeAttn-hswq 库新增的
+    `varlen` 入口（>= 1.2.1）。等长窗口保持单次零拷贝批处理启动；混合长度窗口在库内
+    按相同长度分组（每种长度一次启动，无 padding 浪费，无逐序列启动）。
+    从未违反内核的定长前提。
+  - **备注：** 曾尝试实验性的持久化 Triton 缓存并已回退；spargeattn 路径保持经实测确认的正确状态
+    （无持久化缓存计装）。
+- **技术详情：** 参见 [v1.6.1 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.1) 获取完整说明
+
 ## v1.6.0 — 2026-10-03
 - **摘要：** 新增 DisTorch2 DiT 加载器节点与 Phase 2 显存控制：
   - **SeedVR2 (Down)Load DiT Model with Distorch2：** 新节点，将整个（量化）DiT 常驻于系统内存，

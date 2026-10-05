@@ -7,6 +7,15 @@
 
 # Changelog
 
+## v1.6.1 — 2026-10-05
+- **Summary:** SpargeAttn speed work since v1.6.0 — the spargeattn backend now ships its full per-call path without the fixed overheads that had kept it slower than SageAttention2:
+  - **Sage2++ fp16-accumulate path:** fixed the ragged-window path and routed spargeattn through the SageAttention2++ fp16-accumulate kernel (the evolved form), instead of falling through to the slower f32-accumulate kernel.
+  - **Per-equal-length window batching (zero-copy):** consecutive windows of equal length are batched into the stock API call, removing per-window Python/launch overhead without changing results.
+  - **Per-call D2H sync elimination:** removed the per-call host synchronization in the spargeattn fast path (plan-cache keyed by shape/numel), so the fast path issues zero device-to-host syncs.
+  - **Variable-length (varlen) delegation:** spargeattn varlen handling now delegates to the SpargeAttn-hswq library's new `varlen` entry point (>= 1.2.1). Uniform windows keep a single zero-copy batched launch; mixed-length windows are bucketed by identical length inside the library (one launch per distinct length, no padding waste, no per-sequence launches). The fixed-length premise of the kernels is never violated.
+  - **Note:** an experimental persistent Triton-cache feature was tried and reverted; the spargeattn path is left in its measured-correct state (no persistent-cache instrumentation).
+- **Technical Details:** See [v1.6.1 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.1) for complete explanation
+
 ## v1.6.0 — 2026-10-03
 - **Summary:** New DisTorch2 DiT loader node and Phase 2 VRAM controls:
   - **SeedVR2 (Down)Load DiT Model with Distorch2:** New node that hosts the entire (quantized) DiT
