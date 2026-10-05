@@ -80,6 +80,10 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
     """
     import comfy.ops as comfy_ops
 
+    # __W4A8_EFFICIENT_FORWARD__: install the W4A8-only memory-efficient forward
+    # before the layers are created, so every W4A8 linear uses it in Phase 2.
+    install_efficient_w4a8_forward()
+
     ops = comfy_ops.mixed_precision_ops(
         quant_config={},
         compute_dtype=compute_dtype,
@@ -103,6 +107,126 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
 
     ops.Linear = _mark_dit_locked(Linear)
     return ops
+
+
+# ============================================================================
+# W4A8 memory-efficient forward (__W4A8_EFFICIENT_FORWARD__)
+# ----------------------------------------------------------------------------
+# The stock comfy_kitchen cuda ``w4a8_int8_linear`` (convrot path) unconditionally
+# preallocates ``xq = torch.empty(m, k, int8)`` and then, on the fast_act branch,
+# REASSIGNS xq/xs from ``quantize_int8_rowwise_convrot64`` - the preallocated
+# m*k int8 buffer (1.06 GiB at m=92664,k=12288; 0.28 GiB at k=3072) is never used.
+# INT8 (``int8_linear``) does not do this, so W4A8 wastes ~1 GiB per large linear
+# during SeedVR2 Phase 2 and can overflow VRAM. Measured bit-exact vs the stock
+# chunked path (max abs diff 0.0).
+#
+# This module (W4A8-only) installs a dedicated forward that skips the unused
+# prealloc and otherwise runs the identical fused-convrot-quant + chunked-gemm
+# path. distorch2 / INT8 / NVFP4 code paths are untouched.
+_W4A8_EFF_INSTALLED = False
+
+
+def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
+                           correction=None, bias=None, group_size=16,
+                           convrot_groupsize=256, out_dtype=None):
+    """W4A8 convrot GEMM without the unused m*k int8 preallocation.
+
+    Delegates to the stock kernel for shapes it does not handle (small m / non
+    fast_act), so behavior matches upstream exactly where it matters.
+    """
+    import comfy_kitchen.backends.cuda as cb
+    from comfy_kitchen.backends.cuda import (
+        _wrap_for_dlpack, DTYPE_TO_CODE, _int4_int8_weight_chunk_cols,
+        _convrot_fused_shared_memory_fits, quantize_int8_rowwise_convrot64,
+        _gemm_vector_arg,
+    )
+    orig = getattr(cb, "_stock_w4a8_int8_linear", cb.w4a8_int8_linear)
+
+    if out_dtype is None:
+        out_dtype = x.dtype
+    n = int(qdata.shape[0])
+    k = int(qdata.shape[1]) * 2
+    if x.shape[-1] != k:
+        return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
+                    group_size, convrot_groupsize, out_dtype)
+
+    x_2d = x.reshape(-1, k).contiguous()
+    m = x_2d.shape[0]
+    fast_act = (
+        m >= 512
+        and correction is None
+        and s_rel.dtype == torch.float8_e4m3fn
+        and convrot_groupsize == 256
+        and k % 256 == 0
+        and getattr(cb, "_W4A8_CHUNKED", True)
+        and 256 <= k <= cb._CONVROT_FUSED_MAX_K
+        and _convrot_fused_shared_memory_fits(x_2d, k, convrot_groupsize)
+    )
+    if not fast_act:
+        return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
+                    group_size, convrot_groupsize, out_dtype)
+
+    out = torch.empty(m, n, dtype=out_dtype, device=x.device)
+    output_dtype_code = DTYPE_TO_CODE[out_dtype]
+    stream_ptr = torch.cuda.current_stream(x.device).cuda_stream
+    bias_arg = _gemm_vector_arg(bias, x.device, out_dtype) if bias is not None else None
+    chunk_cols = _int4_int8_weight_chunk_cols(m, n)
+    workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
+
+    # No prealloc: the fused convrot64 quantize returns its own xq/xs.
+    xq, xs = quantize_int8_rowwise_convrot64(x_2d, convrot_groupsize)
+    codebook_arg = _wrap_for_dlpack(codebook) if codebook is not None else None
+    used = cb._C.w4a8_codebook_gemm_chunked(
+        _wrap_for_dlpack(xq),
+        _wrap_for_dlpack(qdata),
+        _wrap_for_dlpack(s_rel.view(torch.uint8)),
+        codebook_arg,
+        _wrap_for_dlpack(s_channel),
+        _wrap_for_dlpack(xs.reshape(m)),
+        _wrap_for_dlpack(bias_arg) if bias_arg is not None else None,
+        _wrap_for_dlpack(workspace),
+        _wrap_for_dlpack(out),
+        group_size,
+        chunk_cols,
+        output_dtype_code,
+        stream_ptr,
+    )
+    if not used:
+        return orig(x, qdata, s_rel, s_channel, codebook, correction, bias,
+                    group_size, convrot_groupsize, out_dtype)
+
+    if correction is not None:
+        groups = k // group_size
+        sx = xq.view(m, groups, group_size).sum(-1, dtype=torch.int32).to(out_dtype)
+        sx = sx * xs.to(out_dtype)
+        out.addmm_(sx, correction.to(out_dtype))
+    return out.reshape(*x.shape[:-1], n)
+
+
+def install_efficient_w4a8_forward() -> bool:
+    """Route the W4A8 layout's linear op through the efficient forward. Idempotent."""
+    global _W4A8_EFF_INSTALLED
+    if _W4A8_EFF_INSTALLED:
+        return True
+    try:
+        import comfy_kitchen.tensor.w4a8_int8 as _tw
+        import comfy_kitchen.backends.cuda as _cb
+        if not hasattr(_cb, "_stock_w4a8_int8_linear"):
+            _cb._stock_w4a8_int8_linear = _cb.w4a8_int8_linear
+        _stock = _tw.w4a8_int8_linear
+
+        def _patched(*args, **kwargs):
+            try:
+                return _efficient_w4a8_linear(*args, **kwargs)
+            except Exception:
+                return _stock(*args, **kwargs)
+
+        _patched._seedvr2_efficient = True
+        _tw.w4a8_int8_linear = _patched
+        _W4A8_EFF_INSTALLED = True
+        return True
+    except Exception:
+        return False
 
 
 def prepare_w4a8_state_dict_for_comfy_ops(state: dict) -> dict:
