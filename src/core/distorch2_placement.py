@@ -28,33 +28,49 @@ from ..optimization.memory_manager import clear_memory
 logger = logging.getLogger("MultiGPU")
 
 
+def _is_w4a8_quant(t) -> bool:
+    """__W4A8_SUPPORT__: True only for an asym_w4a8_int8 QuantizedTensor.
+
+    W4A8 packs the weight as int4, so `_qdata` is half the logical row width
+    (`_qdata.shape[1] * 2 == weight.shape[1]`). INT8 (int8_tensorwise) stores a
+    full-width `_qdata` and never matches; NVFP4 does not either. This is an
+    explicit discriminator, kept SEPARATE from the generic size path.
+    """
+    q = getattr(t, "_qdata", None)
+    if q is None or getattr(q, "dim", lambda: 0)() != 2:
+        return False
+    wshp = getattr(t, "shape", None)
+    if wshp is None or len(wshp) != 2:
+        return False
+    return int(q.shape[1]) * 2 == int(wshp[1])
+
+
+def _w4a8_storage_bytes(t) -> int:
+    """__W4A8_SUPPORT__: real resident bytes of a W4A8 QuantizedTensor.
+
+    A W4A8 pack keeps its per-group fp8 scale and per-channel scale in SEPARATE
+    storages under `_params` (not inside `_qdata`), so `_qdata` alone understates
+    each layer by ~2.3MB. This path counts `_qdata` plus those companion tensors.
+    Dedicated to W4A8; other formats never reach it.
+    """
+    q = t._qdata
+    total = q.numel() * q.element_size()
+    params = getattr(t, "_params", None)
+    if params is not None:
+        for attr in ("scale", "s_channel", "correction", "codebook"):
+            v = getattr(params, attr, None)
+            if torch.is_tensor(v):
+                total += v.numel() * v.element_size()
+    return total
+
+
 def _qt_storage_bytes(t):
     """Actual storage bytes of a tensor (QuantizedTensor-aware)."""
     q = getattr(t, "_qdata", None)
     if q is not None:
-        base = q.numel() * q.element_size()
-        # __W4A8_SUPPORT__ (W4A8 only): an asym_w4a8_int8 QuantizedTensor packs
-        # the weight as int4 (qdata width = logical width // 2) and keeps its
-        # per-group fp8 scale + per-channel scale in SEPARATE storages under
-        # `_params`, so counting _qdata alone understates each layer by ~2.3MB.
-        # Add those companion tensors so the packed model size (and therefore
-        # the DisTorch2 allocation quota) matches real resident bytes.
-        # Guarded to W4A8 by the int4-pack test below, so INT8 (full-width
-        # _qdata) and NVFP4 take the original path unchanged.
-        _wshp = getattr(t, "shape", None)
-        if (
-            _wshp is not None
-            and len(_wshp) == 2
-            and q.dim() == 2
-            and int(q.shape[1]) * 2 == int(_wshp[1])
-        ):
-            _params = getattr(t, "_params", None)
-            if _params is not None:
-                for _attr in ("scale", "s_channel", "correction", "codebook"):
-                    _v = getattr(_params, _attr, None)
-                    if torch.is_tensor(_v):
-                        base += _v.numel() * _v.element_size()
-        return base
+        if _is_w4a8_quant(t):
+            return _w4a8_storage_bytes(t)
+        return q.numel() * q.element_size()
     return t.numel() * t.element_size()
 
 
