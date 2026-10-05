@@ -175,14 +175,11 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
                         weight.to(device=device, dtype=torch.int8), _LAYOUT, params),
                     requires_grad=False,
                 )
-                # __W4A8_OFFLOAD__: make this layer stream its weight per forward,
-                # exactly like INT8/NVFP4 under DisTorch2. comfy_cast_weights=True
-                # routes forward() through core's forward_comfy_cast_weights ->
-                # CastBiasWeightContext(offloadable=True), which streams the weight
-                # onto the compute device and returns it to the offload device
-                # afterwards. Our self _forward runs the W4A8 convrot kernel inside
-                # that context, so CPU offload is preserved (DisTorch2 untouched).
-                self.comfy_cast_weights = True
+                # __W4A8_OFFLOAD__: do NOT set comfy_cast_weights here. DisTorch2
+                # sets it itself (apply_distorch2_placement) for the modules it
+                # places on the donor device; pre-setting it in the loader would
+                # pre-empt / override that placement decision. We leave device
+                # placement entirely to DisTorch2, exactly like INT8.
 
                 torch.nn.Module._load_from_state_dict(
                     self, state_dict, prefix, local_metadata, strict,
