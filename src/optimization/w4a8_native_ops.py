@@ -269,7 +269,7 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
     # (and convrot64) quantization is independent per row, so processing the
     # activation in row chunks is bit-exact and shrinks xq to chunk_m*k.
     # Chunk only the ACTIVATION/GEMM side; weight tensors are untouched.
-    _CHUNK_ROWS = 16384
+    _CHUNK_ROWS = 4096
     if m <= _CHUNK_ROWS:
         chunk_cols = _int4_int8_weight_chunk_cols(m, n)
         workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
@@ -287,12 +287,15 @@ def _efficient_w4a8_linear(x, qdata, s_rel, s_channel, codebook=None,
                         group_size, convrot_groupsize, out_dtype)
     else:
         used_any = False
+        # Allocate the int8 workspace ONCE (sized for the chunk) and reuse it,
+        # instead of re-allocating per chunk (removes per-chunk peak growth).
+        _wc = _int4_int8_weight_chunk_cols(_CHUNK_ROWS, n)
+        workspace = torch.empty(min(_wc, n), k, dtype=torch.int8, device=x.device)
         for start in range(0, m, _CHUNK_ROWS):
             end = min(start + _CHUNK_ROWS, m)
             x_chunk = x_2d[start:end]
             mc = end - start
             chunk_cols = _int4_int8_weight_chunk_cols(mc, n)
-            workspace = torch.empty(min(chunk_cols, n), k, dtype=torch.int8, device=x.device)
             xq, xs = quantize_int8_rowwise_convrot64(x_chunk, convrot_groupsize)
             out_chunk = out[start:end]
             used = cb._C.w4a8_codebook_gemm_chunked(
