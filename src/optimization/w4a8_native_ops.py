@@ -203,30 +203,6 @@ def get_w4a8_mixed_precision_ops(compute_dtype: torch.dtype = torch.float16) -> 
                 input = input.to(dtype=_act_dtype)
             return super().forward(input, *args, **kwargs)
 
-        def forward_comfy_cast_weights(self, input, *args, **kwargs):
-            # __W4A8_OFFLOAD_COEXIST__: use ComfyUI/DisTorch2's own offload
-            # mechanism. CastBiasWeightContext(offloadable=True) streams the
-            # weight from its donor device (CPU) onto the compute device and
-            # returns it to the donor device when the context exits. Inside the
-            # context we run OUR OWN convrot kernel, so offload (DisTorch2) and
-            # the self forward coexist. The weight is never left resident on GPU.
-            import comfy.ops as _co
-            # Mirror core's weight_only_quant branch (W4A8 has quantize_input=False):
-            # cast with input=None so the QuantizedTensor weight is streamed to the
-            # compute device (offload) and kept quantized (_dit_quant_lock), then
-            # compute with our own convrot kernel.
-            with _co.CastBiasWeightContext(
-                self,
-                input=None,
-                dtype=self.weight.dtype,
-                device=input.device,
-                bias_dtype=input.dtype,
-                offloadable=True,
-                compute_dtype=_act_dtype,
-                want_requant=True,
-            ) as (weight, bias):
-                return self._forward(input, weight, bias)
-
         def _forward(self, input, weight, bias):
             # __W4A8_SELF_FORWARD__: run the W4A8 linear with OUR OWN convrot
             # kernel, independent of comfy core's W4A8 layout dispatch. Core's
