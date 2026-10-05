@@ -74,7 +74,9 @@ W4A8 と NVFP4 を混ぜていた → §2.1 で修正済み。INT8 は full-widt
 | 全 109 .py `py_compile`（GitHub/LIVE 両方） | OK ✓ |
 | GitHub↔LIVE↔origin/main | HEAD `7d1c391` 三者一致・dirty なし ✓ |
 
-検証スクリプト: `.openclaw/tmp/verify_sep.py`（ワークスペース seedvr2 配下。関数抽出実行式）
+検証スクリプト: `.openclaw/tmp/verify_sep.py`（W4A8/INT8 の 2 形式。関数抽出実行式）
+3 形式（W4A8/INT8/NVFP4/fp16 の分離判定）は `.openclaw/tmp/verify_sep_full.py`。2 形式版は NVFP4 混入を見落とすため、分離検証には 3 形式版を使うこと。
+※ いずれも GitHub パス基準。LIVE 検証は REPO パスを LIVE クローンに差し替えて実行（両方で実測一致済み）。
 
 ## 4. 未実施（新チャットの第一作業）
 
