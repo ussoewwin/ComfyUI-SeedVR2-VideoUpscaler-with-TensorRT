@@ -71,16 +71,17 @@ class RotaryEmbedding3d(RotaryEmbeddingBase):
 
 
 def _rope_apply_inplace(t, freqs):
-    """In-place interleaved rotary for (h, L, d); equivalent to
-    apply_rotary_emb(freqs, t) when rot_dim == d, without its transient buffers."""
+    """In-place interleaved rotary on the last dim; equivalent to
+    apply_rotary_emb(freqs, t) when rot_dim == d, without its transient
+    (t*cos, rotate_half, t*sin, sum, cat) buffers. freqs broadcasts over t."""
     rot = freqs.shape[-1]
     d = t.shape[-1]
     if rot != d or d % 2 != 0:
         return apply_rotary_emb(freqs, t)
-    cos = freqs.cos().to(t.dtype).unsqueeze(0)
-    sin = freqs.sin().to(t.dtype).unsqueeze(0)
     if not t.is_contiguous():
         t = t.contiguous()
+    cos = freqs.cos().to(t.dtype)
+    sin = freqs.sin().to(t.dtype)
     t2 = t.view(*t.shape[:-1], d // 2, 2)
     t_even = t2[..., 0].clone()
     t_odd = t2[..., 1].clone()
