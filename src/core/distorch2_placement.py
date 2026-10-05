@@ -32,7 +32,29 @@ def _qt_storage_bytes(t):
     """Actual storage bytes of a tensor (QuantizedTensor-aware)."""
     q = getattr(t, "_qdata", None)
     if q is not None:
-        return q.numel() * q.element_size()
+        base = q.numel() * q.element_size()
+        # __W4A8_SUPPORT__ (W4A8 only): an asym_w4a8_int8 QuantizedTensor packs
+        # the weight as int4 (qdata width = logical width // 2) and keeps its
+        # per-group fp8 scale + per-channel scale in SEPARATE storages under
+        # `_params`, so counting _qdata alone understates each layer by ~2.3MB.
+        # Add those companion tensors so the packed model size (and therefore
+        # the DisTorch2 allocation quota) matches real resident bytes.
+        # Guarded to W4A8 by the int4-pack test below, so INT8 (full-width
+        # _qdata) and NVFP4 take the original path unchanged.
+        _wshp = getattr(t, "shape", None)
+        if (
+            _wshp is not None
+            and len(_wshp) == 2
+            and q.dim() == 2
+            and int(q.shape[1]) * 2 == int(_wshp[1])
+        ):
+            _params = getattr(t, "_params", None)
+            if _params is not None:
+                for _attr in ("scale", "s_channel", "correction", "codebook"):
+                    _v = getattr(_params, _attr, None)
+                    if torch.is_tensor(_v):
+                        base += _v.numel() * _v.element_size()
+        return base
     return t.numel() * t.element_size()
 
 
