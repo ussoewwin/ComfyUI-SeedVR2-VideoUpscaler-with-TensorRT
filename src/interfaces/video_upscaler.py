@@ -487,8 +487,15 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 os.environ["SEEDVR2_EMB_REPEAT_NOCACHE"] = "1"
             else:
                 os.environ.pop("SEEDVR2_EMB_REPEAT_NOCACHE", None)
-            # norm bf16 switch（per-node）→ 模???境?量
-            if bool(_d2cfg.get("norm_bf16", False)):
+            # norm bf16 switch（per-node）→ 模块级环境变量。
+            # 双入口分离读取：DisTorch2 节点 → distorch2.norm_bf16；legacy 节点 → 顶层 norm_bf16。
+            # 判别键 = distorch2 块的有无（legacy 节点 config 无该块）。两入口不混读。
+            _norm_bf16_on = False
+            if isinstance(dit.get("distorch2"), dict):
+                _norm_bf16_on = bool(dit["distorch2"].get("norm_bf16", False))
+            else:
+                _norm_bf16_on = bool(dit.get("norm_bf16", False))
+            if _norm_bf16_on:
                 os.environ["SEEDVR2_NORM_BF16"] = "1"
             else:
                 os.environ.pop("SEEDVR2_NORM_BF16", None)

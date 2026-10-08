@@ -147,6 +147,15 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                         "Provides 20-40% speedup with compatible PyTorch 2.0+ and Triton installation."
                     )
                 ),
+                io.Boolean.Input("norm_bf16",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "RMS/QK norm precision during DiT upscaling (Phase 2).\n"
+                        "ON = run norm in bf16: saves significant resident VRAM in Phase 2, but output differs from the fp32 path (per-pixel PSNR ~37-39 dB vs fp32).\n"
+                        "OFF = stock fp32 path (quality-priority; default).\n"
+                    )
+                ),
             ],
             outputs=[
                 io.Custom("SEEDVR2_DIT").Output(
@@ -160,7 +169,8 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                      cache_model: bool = False, blocks_to_swap: int = 0, 
                      swap_io_components: bool = False, attention_mode: str = "sdpa", sparge_topk: str = "0.5",
                      eject_models: bool = True,
-                     torch_compile_args: Dict[str, Any] = None) -> io.NodeOutput:
+                     torch_compile_args: Dict[str, Any] = None,
+                     norm_bf16: bool = False) -> io.NodeOutput:
         """
         Create DiT model configuration for SeedVR2 main node
         
@@ -174,6 +184,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             attention_mode: Attention computation backend ('sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3', 'spargeattn', or 'sageattn_3')
             eject_models: Eject other resident models before this DiT loads (frees VRAM)
             torch_compile_args: Optional torch.compile configuration from settings node
+            norm_bf16: Run RMS/QK norm in bf16 during Phase 2 upscaling (VRAM-saving; output differs from fp32 path)
             
         Returns:
             NodeOutput containing configuration dictionary for SeedVR2 main node
@@ -201,6 +212,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             "sparge_topk": sparge_topk,
             "eject_models": bool(eject_models),
             "torch_compile_args": torch_compile_args,
+            "norm_bf16": bool(norm_bf16),
             "node_id": get_executing_context().node_id,
         }
         
