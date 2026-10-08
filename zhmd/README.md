@@ -108,6 +108,10 @@
 
 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 
+### 基准测试结果
+
+- [SeedVR2 7B 量化基准测试结果](../benchmark/benchmark%20result.md)
+
 ### 本 Fork 技术指南（中文）
 
 - [3B INT8 / NVFP4 模型支持](SEEDVR2_3B_INT8_NVFP4_REGISTRY_GUIDE.md)

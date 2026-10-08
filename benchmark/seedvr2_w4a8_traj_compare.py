@@ -360,6 +360,7 @@ def _build_cli_args(
         vae_decode_tile_overlap=128,
         tile_debug="false",
         attention_mode=attention_mode,
+        sparge_topk=0.5,
         compile_dit=False,
         compile_vae=False,
         compile_backend="inductor",

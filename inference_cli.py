@@ -966,7 +966,7 @@ def _process_frames_core(
         decode_tile_overlap=(args.vae_decode_tile_overlap, args.vae_decode_tile_overlap),
         tile_debug=args.tile_debug.lower() if args.tile_debug else "false",
         attention_mode=args.attention_mode,
-        sparge_topk=args.sparge_topk,
+        sparge_topk=getattr(args, 'sparge_topk', 0.5),
         torch_compile_args_dit=torch_compile_args_dit,
         torch_compile_args_vae=torch_compile_args_vae
     )

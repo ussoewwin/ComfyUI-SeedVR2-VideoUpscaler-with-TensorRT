@@ -109,6 +109,10 @@ For details, refer to the official repository:
 
 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 
+### Benchmark Results
+
+- [SeedVR2 7B Quantization Benchmark Results](benchmark/benchmark%20result.md)
+
 ### Technical Guides (This Fork)
 
 - [3B INT8 / NVFP4 Model Registry Guide](md/SEEDVR2_3B_INT8_NVFP4_REGISTRY_GUIDE.md)
