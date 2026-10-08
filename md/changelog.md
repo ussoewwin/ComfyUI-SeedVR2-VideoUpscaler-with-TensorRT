@@ -8,14 +8,24 @@
 # Changelog
 
 ## v1.6.2 — 2026-10-08
-- **Summary:** norm bf16 mode now available on the standard (legacy) DiT loader:
-  - **norm_bf16 on SeedVR2 (Down)Load DiT Model:** The `norm_bf16` switch, previously exclusive to
-    the DisTorch2 loader (v1.6.0), is now implemented on the standard `SeedVR2 (Down)Load DiT Model`
-    node as well. OFF (default) = stock fp32 norm path (quality-priority; behaviour unchanged).
-    ON = run RMS/QK norm in bf16 during Phase 2, saving significant resident VRAM at the cost of
-    bf16 rounding (per-pixel PSNR ~37–39 dB vs fp32).
-  - Both loaders share the same switch semantics and the same DiT-side bf16 norm path, so the
-    behaviour is identical regardless of which loader node is used.
+- **Summary:** W4A8 × DisTorch2 full adaptation plus the norm_bf16 switch on the legacy DiT loader:
+  - **W4A8 packed-size accounting (DisTorch2):** companion scale tensors (fp8 `scale` + `s_channel`,
+    2.30 MB/layer) are now counted in the packed model size (3.95 → 4.44 GB), fixing the CPU-allocation
+    shortfall that left 23 layers (467 MB) GPU-resident; measured per-layer W4A8 20.30 MB / INT8
+    36.00 MB / NVFP4 18.00 MB / fp16 72.00 MB with INT8·NVFP4·fp16 unchanged.
+  - **Explicit W4A8 discriminator:** W4A8 is identified by layout tag (`AsymW4A8Int8Layout`), not the
+    width heuristic that also matched NVFP4 — the NVFP4 leak into the W4A8 path is closed (3-format +
+    fp16 table verified).
+  - **W4A8 ↔ INT8 core-path parity:** `quant_config {}`, same autocast path (W4A8-only skip dropped;
+    NVFP4 keeps its skip), `_full_precision_mm` forced False; `w4a8`/`w4a4`/`w6a8` model tags
+    recognized as quantized; placement loop moves companion tensors via a dedicated W4A8 branch.
+  - **Phase 2 VRAM reduction:** rope applies rotary in the native dtype (the forced fp32 copies cost a
+    measured +3.37 GiB peak for a cos 0.999997 difference); transient full-length `na.concat` buffers
+    dropped (INT8/NVFP4 numerics untouched, separation verified).
+  - **norm_bf16 on the standard loader:** the switch previously exclusive to the DisTorch2 loader
+    (v1.6.0) now exists on `SeedVR2 (Down)Load DiT Model` too — OFF (default) = stock fp32 path
+    (behaviour unchanged); ON = bf16 RMS/QK norm in Phase 2 (saves resident VRAM; per-pixel PSNR
+    ~37–39 dB vs fp32). Loader config layouts are read with explicit branch separation.
 - **Technical Details:** See [v1.6.2 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.2) for complete explanation
 
 ## v1.6.1 — 2026-10-05

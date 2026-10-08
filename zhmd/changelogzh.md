@@ -8,13 +8,22 @@
 # 更新日志
 
 ## v1.6.2 — 2026-10-08
-- **摘要：** norm bf16 模式现已登陆标准（传统）DiT 加载器：
-  - **SeedVR2 (Down)Load DiT Model 新增 norm_bf16：** 此前仅 DisTorch2 加载器（v1.6.0）提供的
-    `norm_bf16` 开关，现已同样实装到标准 `SeedVR2 (Down)Load DiT Model` 节点。
-    关闭（默认）= 传统 fp32 norm 路径（质量优先，行为不变）。
-    开启 = Phase 2 的 RMS/QK norm 以 bf16 执行，显著节省常驻显存，
-    代价是 bf16 舍入（逐像素 PSNR 约 37–39 dB vs fp32）。
-  - 两个加载器共用同一开关语义与同一 DiT 侧 bf16 norm 路径，无论使用哪个加载器节点，行为一致。
+- **摘要：** W4A8 × DisTorch2 完全适配 + 标准 DiT 加载器新增 norm_bf16 开关：
+  - **W4A8 打包尺寸记账（DisTorch2）：** 伴随 scale 张量（fp8 `scale` + `s_channel`，2.30 MB/层）
+    现计入打包模型尺寸（3.95 → 4.44 GB），修复了使 23 层（467 MB）残留在 GPU 上的 CPU 分配缺口；
+    逐层实测 W4A8 20.30 MB / INT8 36.00 MB / NVFP4 18.00 MB / fp16 72.00 MB，INT8·NVFP4·fp16 无变化。
+  - **W4A8 明示判别：** 以 layout tag（`AsymW4A8Int8Layout`）判别 W4A8，替代对 NVFP4 同样为真的
+    宽度启发式——NVFP4 混入 W4A8 路径的问题已闭合（3 格式 + fp16 表实测验证）。
+  - **W4A8 ↔ INT8 核心路径对齐：** `quant_config {}`、同一 autocast 路径（废除 W4A8 专属跳过；
+    NVFP4 保持其跳过）、`_full_precision_mm` 强制 False；识别 `w4a8`/`w4a4`/`w6a8` 模型 tag 为量化；
+    放置循环经专用 W4A8 分支一并搬移伴随张量。
+  - **Phase 2 显存削减：** rope 以原生 dtype 执行 rotary（强制 fp32 拷贝实测造成 +3.37 GiB 峰值，
+    而差异仅为 cos 0.999997 的舍入级）；去除 `na.concat` 瞬态全长缓冲（INT8/NVFP4 数值不受影响，
+    分离已验证）。
+  - **标准加载器新增 norm_bf16：** 此前仅 DisTorch2 加载器（v1.6.0）提供的 `norm_bf16` 开关，
+    现已同样实装到标准 `SeedVR2 (Down)Load DiT Model` 节点——关闭（默认）= 传统 fp32 路径
+    （行为不变）；开启 = Phase 2 的 RMS/QK norm 以 bf16 执行（节省常驻显存；逐像素 PSNR 约
+    37–39 dB vs fp32）。两个加载器的 config 布局以显式分支分离读取。
 - **技术详情：** 参见 [v1.6.2 发行说明](v1.6.2.md) 获取完整说明
 
 ## v1.6.1 — 2026-10-05
