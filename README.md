@@ -63,6 +63,25 @@ Built engines land in `tensorrt_backend/artifacts/` and automatically populate t
 4. Once completed, restart ComfyUI. The newly built engine frame size will appear in the `engine_frames` list of the **`SeedVR2 Load TensorRT VAE Decoder`** node.
 
 
+### SeedVR2 (Down)Load DiT Model (Standard / Legacy Loader) Node
+
+![SeedVR2 (Down)Load DiT Model Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/legacy_dit.png)
+
+The **`SeedVR2 (Down)Load DiT Model`** node is the standard DiT loader. It loads the DiT checkpoint (FP16 or ConvRot INT8 / NVFP4 quantized) onto the compute device, with BlockSwap (`blocks_to_swap` / `swap_io_components`) available to move parts of the model to an offload device for low-VRAM systems. Its output type is `SEEDVR2_DIT`, identical to the DisTorch2 loader, so it connects to the **`SeedVR2 Video Upscaler`** node the same way.
+
+#### Node Parameters & Settings
+
+- **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4) and FP16 checkpoints are both supported.
+- **`device`**: Compute device for DiT inference.
+- **`blocks_to_swap`**: Number of transformer blocks swapped between devices during inference (0 = disabled). Requires `offload_device` to be set and different from `device`.
+- **`swap_io_components`**: Offload input/output embeddings and normalization layers to the offload device. Requires `offload_device` to be set and different from `device`.
+- **`offload_device`**: Device that hosts the DiT when it is not actively processing (`none` / `cpu` / another GPU). Required for BlockSwap.
+- **`cache_model`**: Keep the DiT loaded on `offload_device` between workflow runs (requires `offload_device` to be set).
+- **`eject_models`**: Eject other resident models before this DiT loads to free VRAM (recommended ON).
+- **`attention_mode`** / **`sparge_topk`**: Attention backend and SpargeAttn KV keep ratio (identical to the DisTorch2 loader).
+- **`torch_compile_args`**: Optional `torch.compile` settings from the SeedVR2 Torch Compile Settings node.
+- **`norm_bf16`**: RMS/QK norm precision during Phase 2. OFF = stock fp32 path (quality-priority). ON = bf16 norm path (saves resident VRAM; output differs from the fp32 path).
+
 ### SeedVR2 (Down)Load DiT Model with Distorch2 Node
 
 ![SeedVR2 (Down)Load DiT Model with Distorch2 Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/distorch2.png)

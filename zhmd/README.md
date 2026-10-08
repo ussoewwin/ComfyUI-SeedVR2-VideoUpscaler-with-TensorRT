@@ -63,6 +63,25 @@
 4. 构建完成后重启 ComfyUI，**`SeedVR2 Load TensorRT VAE Decoder`** 节点的 `engine_frames` 下拉列表中将显示新构建的帧数，即可开启极速解码。
 
 
+### SeedVR2 (Down)Load DiT Model（标准 / 传统加载器）节点
+
+![SeedVR2 (Down)Load DiT Model Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/legacy_dit.png)
+
+**`SeedVR2 (Down)Load DiT Model`** 节点是标准 DiT 加载器。它将 DiT 检查点（FP16 或 ConvRot INT8 / NVFP4 量化）加载到计算设备上，并可通过 BlockSwap（`blocks_to_swap` / `swap_io_components`）把部分模型转移到卸载设备，适合低显存系统。其输出类型（`SEEDVR2_DIT`）与 DisTorch2 加载器完全一致，可同样连接到 **`SeedVR2 Video Upscaler`** 节点。
+
+#### 节点参数与设置
+
+- **`model`**：DiT 检查点（如 `seedvr2_7b_int8_convrot.safetensors`）。支持量化（INT8 / NVFP4）与 FP16 检查点。
+- **`device`**：DiT 推理的计算设备。
+- **`blocks_to_swap`**：推理时在设备之间交换的 transformer 块数量（0 = 禁用）。需要设置 `offload_device` 且与 `device` 不同。
+- **`swap_io_components`**：将输入/输出嵌入与归一化层卸载到卸载设备。需要设置 `offload_device` 且与 `device` 不同。
+- **`offload_device`**：DiT 非活跃处理时的承载设备（`none` / `cpu` / 其他 GPU）。BlockSwap 的前提条件。
+- **`cache_model`**：在工作流多次运行之间将 DiT 保留在 `offload_device` 上（需要设置 `offload_device`）。
+- **`eject_models`**：加载本 DiT 前卸载其他常驻模型以释放 VRAM（建议开启）。
+- **`attention_mode`** / **`sparge_topk`**：注意力后端与 SpargeAttn KV 保留比例（与 DisTorch2 加载器相同）。
+- **`torch_compile_args`**：可选的 `torch.compile` 设置，来自 SeedVR2 Torch Compile Settings 节点。
+- **`norm_bf16`**：Phase 2 的 RMS/QK norm 精度。关闭 = 传统 fp32 路径（质量优先）。开启 = bf16 norm 路径（节省常驻 VRAM；输出与 fp32 路径不同）。
+
 ### SeedVR2 (Down)Load DiT Model with Distorch2 节点
 
 ![SeedVR2 (Down)Load DiT Model with Distorch2 节点](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/distorch2.png)
