@@ -7,6 +7,17 @@
 
 # Changelog
 
+## v1.6.2 — 2026-10-08
+- **Summary:** norm bf16 mode now available on the standard (legacy) DiT loader:
+  - **norm_bf16 on SeedVR2 (Down)Load DiT Model:** The `norm_bf16` switch, previously exclusive to
+    the DisTorch2 loader (v1.6.0), is now implemented on the standard `SeedVR2 (Down)Load DiT Model`
+    node as well. OFF (default) = stock fp32 norm path (quality-priority; behaviour unchanged).
+    ON = run RMS/QK norm in bf16 during Phase 2, saving significant resident VRAM at the cost of
+    bf16 rounding (per-pixel PSNR ~37–39 dB vs fp32).
+  - Both loaders share the same switch semantics and the same DiT-side bf16 norm path, so the
+    behaviour is identical regardless of which loader node is used.
+- **Technical Details:** See [v1.6.2 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.2) for complete explanation
+
 ## v1.6.1 — 2026-10-05
 - **Summary:** SpargeAttn speed work since v1.6.0 — the spargeattn backend now ships its full per-call path without the fixed overheads that had kept it slower than SageAttention2:
   - **Sage2++ fp16-accumulate path:** fixed the ragged-window path and routed spargeattn through the SageAttention2++ fp16-accumulate kernel (the evolved form), instead of falling through to the slower f32-accumulate kernel.

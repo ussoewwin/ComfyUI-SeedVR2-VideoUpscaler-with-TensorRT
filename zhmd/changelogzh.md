@@ -7,6 +7,16 @@
 
 # 更新日志
 
+## v1.6.2 — 2026-10-08
+- **摘要：** norm bf16 模式现已登陆标准（传统）DiT 加载器：
+  - **SeedVR2 (Down)Load DiT Model 新增 norm_bf16：** 此前仅 DisTorch2 加载器（v1.6.0）提供的
+    `norm_bf16` 开关，现已同样实装到标准 `SeedVR2 (Down)Load DiT Model` 节点。
+    关闭（默认）= 传统 fp32 norm 路径（质量优先，行为不变）。
+    开启 = Phase 2 的 RMS/QK norm 以 bf16 执行，显著节省常驻显存，
+    代价是 bf16 舍入（逐像素 PSNR 约 37–39 dB vs fp32）。
+  - 两个加载器共用同一开关语义与同一 DiT 侧 bf16 norm 路径，无论使用哪个加载器节点，行为一致。
+- **技术详情：** 参见 [v1.6.2 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.2) 获取完整说明
+
 ## v1.6.1 — 2026-10-05
 - **摘要：** v1.6.0 以来的 SpargeAttn 提速工作 —— spargeattn 后端现已完整跑通其每次调用的路径，
   去除了此前使其慢于 SageAttention2 的固定开销：
