@@ -15,7 +15,7 @@
     开启 = Phase 2 的 RMS/QK norm 以 bf16 执行，显著节省常驻显存，
     代价是 bf16 舍入（逐像素 PSNR 约 37–39 dB vs fp32）。
   - 两个加载器共用同一开关语义与同一 DiT 侧 bf16 norm 路径，无论使用哪个加载器节点，行为一致。
-- **技术详情：** 参见 [v1.6.2 发行说明](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.2) 获取完整说明
+- **技术详情：** 参见 [v1.6.2 发行说明](v1.6.2.md) 获取完整说明
 
 ## v1.6.1 — 2026-10-05
 - **摘要：** v1.6.0 以来的 SpargeAttn 提速工作 —— spargeattn 后端现已完整跑通其每次调用的路径，
