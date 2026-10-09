@@ -7,6 +7,11 @@
 
 # 更新日志
 
+## v1.6.3 — 2026-10-09
+- **摘要：** `triton-windows` 动态解析与解除版本固定：
+  - **动态 Triton 解析：** 从 `requirements-windows-cu132.txt` 中移除了硬编码版本绑定（`triton-windows==3.5.1.post24`）。安装流水线与运行时环境现会自动从 PyPI 解析并安装最新的 `triton-windows` 构建版本，自适应更新的 PyTorch 运行时与 CUDA 环境，无需手动维护或锁定版本。
+- **技术详情：** 参见 [v1.6.3 发行说明](v1.6.3.md) 获取完整说明
+
 ## v1.6.2 — 2026-10-08
 - **摘要：** norm bf16 模式现已登陆标准（传统）DiT 加载器：
   - **SeedVR2 (Down)Load DiT Model 新增 norm_bf16：** 此前仅 DisTorch2 加载器（v1.6.0）提供的

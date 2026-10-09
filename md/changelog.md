@@ -7,6 +7,11 @@
 
 # Changelog
 
+## v1.6.3 — 2026-10-09
+- **Summary:** Dynamic `triton-windows` resolution & unpinning:
+  - **Dynamic Triton resolution:** Removed hardcoded version pin (`triton-windows==3.5.1.post24`) from `requirements-windows-cu132.txt`. The installer and runtime setup now dynamically resolve and install the latest available `triton-windows` release from PyPI, automatically adapting to newer PyTorch runtimes and CUDA environments without version locks.
+- **Technical Details:** See [v1.6.3 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.3) for complete explanation
+
 ## v1.6.2 — 2026-10-08
 - **Summary:** norm bf16 mode now available on the standard (legacy) DiT loader:
   - **norm_bf16 on SeedVR2 (Down)Load DiT Model:** The `norm_bf16` switch, previously exclusive to
