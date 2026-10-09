@@ -125,4 +125,46 @@ bifurcated seeds : 0/25   (sudden trajectory jump = different picture, not degra
 [HSWQ QUANT] GEMM MODE: stock ComfyUI mixed_precision (dequant GEMM)
   (no HSWQ TC patch applied; QuantizedTensor stays packed, matmul dequantizes)
 ------------------------------------------------------------------------
-PS C:\Users\ussoe\source\repos>
+
+
+7b sharp convrot int8
+
+[seed 99999] FP16 wall: 124.92s / 16.04 GiB | int8 wall: 31.38s / 8.53 GiB
+
+--- Multi-seed summary ---
+    seed   lat-cos     lat-mse  max-drop    img-MSE  img-SSIM                verdict
+      42   0.99768   3.835e-03    0.0000   1.301748  0.992379             same-image
+     137   0.99758   4.045e-03    0.0000   1.301762  0.992254             same-image
+     256   0.99769   3.913e-03    0.0000   1.328642  0.992233             same-image
+     512   0.99743   4.324e-03    0.0000   1.365463  0.992473             same-image
+     777   0.99767   3.924e-03    0.0000   1.246638  0.992877             same-image
+    1024   0.99796   3.402e-03    0.0000   1.215097  0.992333             same-image
+    1337   0.99775   3.726e-03    0.0000   1.287144  0.992285             same-image
+    2048   0.99787   3.549e-03    0.0000   1.273745  0.992545             same-image
+    3141   0.99757   4.040e-03    0.0000   1.389078  0.992346             same-image
+    4096   0.99739   4.416e-03    0.0000   1.266364  0.993059             same-image
+    5555   0.99775   3.824e-03    0.0000   1.257686  0.992605             same-image
+    6891   0.99771   3.850e-03    0.0000   1.343288  0.992493             same-image
+    7777   0.99775   3.820e-03    0.0000   1.231050  0.992854             same-image
+    8192   0.99785   3.617e-03    0.0000   1.130180  0.993011             same-image
+    9999   0.99771   3.863e-03    0.0000   1.410422  0.991726             same-image
+   12345   0.99790   3.455e-03    0.0000   1.310920  0.991966             same-image
+   20240   0.99772   3.855e-03    0.0000   1.279615  0.992800             same-image
+   32768   0.99734   4.469e-03    0.0000   1.489268  0.991616             same-image
+   44444   0.99707   4.923e-03    0.0000   1.423542  0.991593             same-image
+   54321   0.99789   3.537e-03    0.0000   1.155991  0.992586             same-image
+   65536   0.99765   3.900e-03    0.0000   1.393759  0.992502             same-image
+   71828   0.99763   3.942e-03    0.0000   1.297706  0.992468             same-image
+   88888   0.99765   3.932e-03    0.0000   1.304572  0.992472             same-image
+   94103   0.99771   3.831e-03    0.0000   1.285110  0.992371             same-image
+   99999   0.99758   4.088e-03    0.0000   1.277793  0.992709             same-image
+
+final-latent-cosine: min=0.99707  mean=0.99766  max=0.99796
+same-image seeds : 25/25
+bifurcated seeds : 0/25   (sudden trajectory jump = different picture, not degradation)
+
+------------------------------------------------------------------------
+[HSWQ QUANT] GEMM MODE: native INT8 (int8_tensorwise, dequant GEMM)
+  (INT8 forward statistics are not exposed by the HSWQ nodes package)
+------------------------------------------------------------------------
+

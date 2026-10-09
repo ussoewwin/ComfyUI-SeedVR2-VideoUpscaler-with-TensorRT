@@ -52,6 +52,8 @@ MODEL_REGISTRY = {
     "seedvr2_ema_7b_sharp_fp16.safetensors": ModelInfo(size="7B", precision="fp16", variant="sharp", sha256="20a93e01ff24beaeebc5de4e4e5be924359606c356c9c51509fba245bd2d77dd"),
     "seedvr2_7b_sharp_int8_convrot.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="int8_tensorwise_convrot", variant="sharp", sha256="db48be2f1cc7e36b01a2aa529810f5d9c6a971edd29be225cf1b0eb18d51c366"),
     "seedvr2_7b_sharp_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="nvfp4", variant="sharp", sha256="80d57af7722f5a5bd4c01d2ab2688f2bf05e552e59d3d3287257de709db10397"),
+    "seedvr2_7b_sharp_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-w4a8", remote_filename="seedvr2_7b_sharp_convrot_w4a8.safetensors", size="7B", precision="asym_w4a8_int8", variant="sharp"),
+    "seedvr2_7b_sharp_convrot_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-w4a8", size="7B", precision="asym_w4a8_int8", variant="sharp"),
     
     # VAE models
     "ema_vae_fp16.safetensors": ModelInfo(category="vae", precision="fp16", sha256="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"),
