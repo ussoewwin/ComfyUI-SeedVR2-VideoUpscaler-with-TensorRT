@@ -168,3 +168,90 @@ bifurcated seeds : 0/25   (sudden trajectory jump = different picture, not degra
   (INT8 forward statistics are not exposed by the HSWQ nodes package)
 ------------------------------------------------------------------------
 
+
+7b sharp nvfp4
+
+[seed 99999] FP16 wall: 117.60s / 16.07 GiB | nvfp4 wall: 11.59s / 5.72 GiB
+
+--- Multi-seed summary ---
+    seed   lat-cos     lat-mse  max-drop    img-MSE  img-SSIM                verdict
+      42   0.94556   8.922e-02    0.0000  11.323482  0.936805 drifted (different image)
+     137   0.94522   9.069e-02    0.0000  11.585066  0.935118 drifted (different image)
+     256   0.94563   9.112e-02    0.0000  11.517452  0.935610 drifted (different image)
+     512   0.94215   9.650e-02    0.0000  11.110511  0.941383 drifted (different image)
+     777   0.94471   9.306e-02    0.0000  10.580075  0.944966 drifted (different image)
+    1024   0.94485   9.146e-02    0.0000  11.982109  0.930872 drifted (different image)
+    1337   0.94473   9.118e-02    0.0000  11.302195  0.938384 drifted (different image)
+    2048   0.94589   8.928e-02    0.0000  11.494301  0.936161 drifted (different image)
+    3141   0.94635   8.818e-02    0.0000  11.169156  0.938926 drifted (different image)
+    4096   0.94107   9.966e-02    0.0000  10.549964  0.945327 drifted (different image)
+    5555   0.94447   9.289e-02    0.0000  11.564417  0.936048 drifted (different image)
+    6891   0.94277   9.538e-02    0.0000  11.260390  0.937313 drifted (different image)
+    7777   0.94378   9.421e-02    0.0000  11.303657  0.938176 drifted (different image)
+    8192   0.94683   8.810e-02    0.0000  11.011261  0.940104 drifted (different image)
+    9999   0.94401   9.336e-02    0.0000  12.094303  0.929667 drifted (different image)
+   12345   0.94602   8.816e-02    0.0000  12.305139  0.928574 drifted (different image)
+   20240   0.94161   9.782e-02    0.0000  11.067552  0.941244 drifted (different image)
+   32768   0.94678   8.830e-02    0.0000  11.356407  0.936133 drifted (different image)
+   44444   0.94661   8.871e-02    0.0000  11.163193  0.937827 drifted (different image)
+   54321   0.94588   8.969e-02    0.0000  11.764934  0.931937 drifted (different image)
+   65536   0.94641   8.804e-02    0.0000  11.483976  0.937484 drifted (different image)
+   71828   0.94745   8.631e-02    0.0000  11.036493  0.939837 drifted (different image)
+   88888   0.94775   8.649e-02    0.0000  10.933421  0.940696 drifted (different image)
+   94103   0.94659   8.866e-02    0.0000  11.284058  0.935915 drifted (different image)
+   99999   0.94438   9.270e-02    0.0000  11.206266  0.939381 drifted (different image)
+
+final-latent-cosine: min=0.94107  mean=0.94510  max=0.94775
+same-image seeds : 0/25
+bifurcated seeds : 0/25   (sudden trajectory jump = different picture, not degradation)
+
+------------------------------------------------------------------------
+[HSWQ QUANT] GEMM MODE: stock ComfyUI mixed_precision (dequant GEMM)
+  (no HSWQ TC patch applied; QuantizedTensor stays packed, matmul dequantizes)
+------------------------------------------------------------------------
+
+
+7b sharp convrot w4a8
+
+[seed 99999] FP16 wall: 117.25s / 16.04 GiB | w4a8 wall: 11.18s / 5.69 GiB
+
+--- Multi-seed summary ---
+    seed   lat-cos     lat-mse  max-drop    img-MSE  img-SSIM                verdict
+      42   0.97764   3.692e-02    0.0000   6.155150  0.965473 drifted (different image)
+     137   0.97674   3.888e-02    0.0000   6.391566  0.964073 drifted (different image)
+     256   0.97662   3.948e-02    0.0000   6.609159  0.961738 drifted (different image)
+     512   0.97536   4.133e-02    0.0000   6.162277  0.966750 drifted (different image)
+     777   0.97585   4.082e-02    0.0000   6.112899  0.966924 drifted (different image)
+    1024   0.97725   3.799e-02    0.0000   6.719863  0.959867 drifted (different image)
+    1337   0.97727   3.773e-02    0.0000   6.209129  0.964466 drifted (different image)
+    2048   0.97694   3.844e-02    0.0000   6.348325  0.963356 drifted (different image)
+    3141   0.97707   3.804e-02    0.0000   6.486503  0.963851 drifted (different image)
+    4096   0.97505   4.221e-02    0.0000   6.050926  0.968514 drifted (different image)
+    5555   0.97648   3.994e-02    0.0000   6.443589  0.964402 drifted (different image)
+    6891   0.97574   4.072e-02    0.0000   6.417443  0.963941 drifted (different image)
+    7777   0.97534   4.191e-02    0.0000   6.235523  0.965722 drifted (different image)
+    8192   0.97759   3.746e-02    0.0000   6.070515  0.966800 drifted (different image)
+    9999   0.97705   3.860e-02    0.0000   6.615998  0.960640 drifted (different image)
+   12345   0.97761   3.686e-02    0.0000   6.720542  0.959610 drifted (different image)
+   20240   0.97604   4.060e-02    0.0000   6.172409  0.966695 drifted (different image)
+   32768   0.97743   3.771e-02    0.0000   6.417006  0.963568 drifted (different image)
+   44444   0.97693   3.859e-02    0.0000   6.316401  0.964453 drifted (different image)
+   54321   0.97694   3.850e-02    0.0000   6.382173  0.962706 drifted (different image)
+   65536   0.97789   3.664e-02    0.0000   6.362737  0.965235 drifted (different image)
+   71828   0.97780   3.680e-02    0.0000   5.946131  0.966800 drifted (different image)
+   88888   0.97780   3.698e-02    0.0000   6.041076  0.966376 drifted (different image)
+   94103   0.97767   3.729e-02    0.0000   6.158057  0.964699 drifted (different image)
+   99999   0.97643   3.970e-02    0.0000   6.165150  0.966403 drifted (different image)
+
+final-latent-cosine: min=0.97505  mean=0.97682  max=0.97789
+same-image seeds : 0/25
+bifurcated seeds : 0/25   (sudden trajectory jump = different picture, not degradation)
+
+------------------------------------------------------------------------
+[HSWQ QUANT] GEMM MODE: native W4A8 (asym_w4a8_int8, AsymW4A8Int8Layout + ConvRot)
+  Weight : INT4 packed storage (torch.int8 [out_features, in_features // 2])
+  ConvRot: Hadamard orthogonal rotation active (convrot_groupsize=256)
+  Scale  : FP8 group scale (weight_s_rel) + FP32 channel scale (weight_s_channel)
+  Kernel : comfy_kitchen w4a8_int8_linear / dequant GEMM on SM80+
+------------------------------------------------------------------------
+
