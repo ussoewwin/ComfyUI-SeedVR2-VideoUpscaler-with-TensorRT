@@ -272,6 +272,16 @@ def ensure_trt_engine_for_frames(frames: int, vae: torch.nn.Module | None = None
         print(f"[SeedVR2 TensorRT] Building {frames}-frame encoder engine: {enc_eng.name} (512x512 tile)...")
         build_trt_engine(onnx_path, enc_eng, workspace_gb=workspace_gb, spatial_tile=512, frames=frames, is_decoder=False)
         print(f"[SeedVR2 TensorRT] Built {enc_eng.name} in {time.perf_counter() - t0:.1f}s")
+        try:
+            if onnx_path.exists():
+                onnx_path.unlink()
+                print(f"[SeedVR2 TensorRT] Deleted intermediate ONNX: {onnx_path.name}")
+            onnx_data = onnx_path.with_name(onnx_path.name + ".data")
+            if onnx_data.exists():
+                onnx_data.unlink()
+                print(f"[SeedVR2 TensorRT] Deleted intermediate ONNX data: {onnx_data.name}")
+        except Exception as del_err:
+            print(f"[SeedVR2 TensorRT] Warning deleting ONNX: {del_err}")
 
     if needs_dec:
         gc.collect()
@@ -303,6 +313,16 @@ def ensure_trt_engine_for_frames(frames: int, vae: torch.nn.Module | None = None
         print(f"[SeedVR2 TensorRT] Building {frames}-frame decoder engine: {dec_eng.name} ({dec_tile_px}x{dec_tile_px} tile)...")
         build_trt_engine(onnx_path, dec_eng, workspace_gb=workspace_gb, spatial_tile=dec_tile_px, frames=frames, is_decoder=True)
         print(f"[SeedVR2 TensorRT] Built {dec_eng.name} in {time.perf_counter() - t0:.1f}s")
+        try:
+            if onnx_path.exists():
+                onnx_path.unlink()
+                print(f"[SeedVR2 TensorRT] Deleted intermediate ONNX: {onnx_path.name}")
+            onnx_data = onnx_path.with_name(onnx_path.name + ".data")
+            if onnx_data.exists():
+                onnx_data.unlink()
+                print(f"[SeedVR2 TensorRT] Deleted intermediate ONNX data: {onnx_data.name}")
+        except Exception as del_err:
+            print(f"[SeedVR2 TensorRT] Warning deleting ONNX: {del_err}")
 
     if created_vae:
         del vae, runner

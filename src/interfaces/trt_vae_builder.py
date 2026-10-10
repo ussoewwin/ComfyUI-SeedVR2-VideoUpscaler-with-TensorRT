@@ -214,6 +214,18 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                     raise RuntimeError(f"Engine build failed for {kind}:\n{tail2}\n{err2}")
                 print(f"  [builder] {tail2}", flush=True)
 
+                # Delete intermediate ONNX after engine creation completes
+                try:
+                    if onnx_path.exists():
+                        onnx_path.unlink()
+                        print(f"  [cleanup] Deleted intermediate ONNX: {onnx_path.name}", flush=True)
+                    onnx_data = onnx_path.with_name(onnx_path.name + ".data")
+                    if onnx_data.exists():
+                        onnx_data.unlink()
+                        print(f"  [cleanup] Deleted intermediate ONNX data: {onnx_data.name}", flush=True)
+                except Exception as del_err:
+                    print(f"  [cleanup] Warning deleting ONNX: {del_err}", flush=True)
+
                 size_mb = eng_path.stat().st_size / 2**20
                 status_lines.append(f" - Built {eng_name} ({size_mb:.1f} MB in {time.perf_counter() - t0:.1f}s)")
                 if pbar:
