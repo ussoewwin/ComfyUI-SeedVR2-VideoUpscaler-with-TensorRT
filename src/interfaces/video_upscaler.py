@@ -345,9 +345,22 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
         
         # Extract configuration from dict inputs
         dit_model = dit.get("model", "seedvr2_ema_3b_fp16.safetensors")
-        # Separate encoder/decoder configs (no shared `vae` input anymore)
-        encode_cfg: Dict[str, Any] = vae_encode or {}
-        decode_cfg: Dict[str, Any] = vae_decode or {}
+        # Separate encoder/decoder configs - if only one is connected, share config across both
+        encode_cfg: Dict[str, Any] = dict(vae_encode) if vae_encode is not None else (dict(vae_decode) if vae_decode is not None else {})
+        decode_cfg: Dict[str, Any] = dict(vae_decode) if vae_decode is not None else (dict(vae_encode) if vae_encode is not None else {})
+
+        # If either encoder or decoder is TensorRT, BOTH strictly use TensorRT (zero fallback to FP16)
+        _is_trt = bool(
+            encode_cfg.get("use_tensorrt_vae", False)
+            or decode_cfg.get("use_tensorrt_vae", False)
+            or encode_cfg.get("vae_backend") == "tensorrt"
+            or decode_cfg.get("vae_backend") == "tensorrt"
+        )
+        if _is_trt:
+            encode_cfg["use_tensorrt_vae"] = True
+            encode_cfg["vae_backend"] = "tensorrt"
+            decode_cfg["use_tensorrt_vae"] = True
+            decode_cfg["vae_backend"] = "tensorrt"
 
         vae_model = encode_cfg.get("model", "ema_vae_fp16.safetensors")
         dit_device = torch.device(dit.get("device", "cuda:0"))
@@ -500,19 +513,17 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
             else:
                 os.environ.pop("SEEDVR2_NORM_BF16", None)
 
-            # Separate TRT flags: encode and decode must not force each other
-            # (e.g. TRT decoder + FP16 encoder must keep the encoder on the FP16 path).
-            runner.use_tensorrt_vae_encode = bool(
+            # TensorRT VAE flags: If TRT is enabled or either endpoint is TRT,
+            # both encode and decode MUST run TensorRT. No silent fallback to FP16.
+            _trt_active = bool(
                 encode_cfg.get("use_tensorrt_vae", False)
+                or decode_cfg.get("use_tensorrt_vae", False)
                 or encode_cfg.get("vae_backend") == "tensorrt"
-            )
-            runner.use_tensorrt_vae_decode = bool(
-                decode_cfg.get("use_tensorrt_vae", False)
                 or decode_cfg.get("vae_backend") == "tensorrt"
             )
-            runner.use_tensorrt_vae = (
-                runner.use_tensorrt_vae_encode or runner.use_tensorrt_vae_decode
-            )
+            runner.use_tensorrt_vae_encode = _trt_active
+            runner.use_tensorrt_vae_decode = _trt_active
+            runner.use_tensorrt_vae = _trt_active
             runner.use_tensorrt_engine_frames = encode_cfg.get("engine_frames", "auto")
             runner.use_tensorrt_engine_tile = encode_cfg.get("engine_tile", "auto")
             runner.use_tensorrt_decode_engine_frames = decode_cfg.get("engine_frames", "auto")

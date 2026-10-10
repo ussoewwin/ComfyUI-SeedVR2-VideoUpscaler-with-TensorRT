@@ -280,9 +280,13 @@ class VideoDiffusionInfer():
 
             # VAE process by each group.
             for sample in batches:
-                # Check TensorRT VAE encoder
-                _enc_trt = getattr(self, "use_tensorrt_vae_encode",
-                                   getattr(self, "use_tensorrt_vae", False))
+                # Check TensorRT VAE encoder: strictly prioritize TensorRT, no silent FP16 fallback
+                _enc_trt = (
+                    getattr(self, "use_tensorrt_vae_encode", False)
+                    or getattr(self, "use_tensorrt_vae_decode", False)
+                    or getattr(self, "use_tensorrt_vae", False)
+                    or os.environ.get("SEEDVR2_TRT_ENCODER", "0") == "1"
+                )
                 if _enc_trt or os.environ.get("SEEDVR2_TRT_ENCODER", "0") == "1":
                     # No silent fp16 fallback: selecting the TensorRT encoder means
                     # TRT must encode. A missing engine / any failure raises a clear
@@ -414,9 +418,13 @@ class VideoDiffusionInfer():
                 latent = optimized_channels_to_second(latent)
                 latent = latent.squeeze(2)
 
-                # Check TensorRT VAE decoder
-                _dec_trt = getattr(self, "use_tensorrt_vae_decode",
-                                   getattr(self, "use_tensorrt_vae", False))
+                # Check TensorRT VAE decoder: strictly prioritize TensorRT, no silent FP16 fallback
+                _dec_trt = (
+                    getattr(self, "use_tensorrt_vae_decode", False)
+                    or getattr(self, "use_tensorrt_vae_encode", False)
+                    or getattr(self, "use_tensorrt_vae", False)
+                    or os.environ.get("SEEDVR2_TRT_DECODER", "0") == "1"
+                )
                 if _dec_trt or os.environ.get("SEEDVR2_TRT_DECODER", "0") == "1":
                     # No silent fp16 fallback: selecting the TensorRT decoder means
                     # TRT must decode. A missing engine / any failure raises a clear
