@@ -7,6 +7,13 @@
 
 # 更新日志
 
+## v1.6.5 — 2026-10-10
+- **摘要：** TensorRT VAE 回退路径彻底清除与引擎构建中间 ONNX 自动删除：
+  - **清除 SeedVR2 Video Upscaler 的 PyTorch VAE 意外回退：** 修复了当仅连接单个 VAE 输入端（`vae_decode` 或 `vae_encode`）时，另一端因空配置而意外脱落回退到标准 PyTorch FP16 VAE、导致在高分辨率（如 4208px）下发生严重 CUDA 显存溢出（OOM）的问题。现已实现单端连接时自动双向同步配置；且只要任一端指定了 TensorRT，Encode 与 Decode 均强制锁定为 TensorRT 执行并同步 Runner 状态标识，彻底杜绝静默回退到 FP16 路径。
+  - **构建引擎后自动清理中间 ONNX：** 在 `SeedVR2 Build TensorRT VAE Engines` 节点以及加载器引擎编译逻辑中，当 TensorRT `.rtxplan` 引擎成功生成后，立即自动删除临时生成的中间 `.onnx` 文件及关联的 `.onnx.data`，避免每次构建残留数 GB 的冗余磁盘占用。
+  - **节点显示名称精简：** 移除节点注册时的历史版本号后缀，规范统一为 `SeedVR2 Video Upscaler`。
+- **技术详情：** 参见 [v1.6.5 发行说明](v1.6.5.md) 获取完整说明
+
 ## v1.6.4 — 2026-10-10
 - **摘要：** 更新 ConvRot INT8 与 w4a8 DiT 模型的自动下载仓库：
   - **ConvRot INT8 与 w4a8 模型注册表迁移：** 将所有 3B / 7B / 7B sharp ConvRot INT8 及非对称 w4a8 INT8 DiT 模型的自动下载源仓库更新为 [`ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8`](https://huggingface.co/ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8)。

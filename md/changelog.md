@@ -7,6 +7,13 @@
 
 # Changelog
 
+## v1.6.5 — 2026-10-10
+- **Summary:** TensorRT VAE fallback elimination & engine build ONNX auto-cleanup:
+  - **Eliminate PyTorch VAE Fallback in SeedVR2 Video Upscaler:** Fixed an issue where connecting only one VAE input (`vae_decode` or `vae_encode`) left the other as an empty configuration, unintentionally causing the encoder to drop back to the standard PyTorch FP16 VAE and triggering massive CUDA out-of-memory errors on high resolutions (e.g. 4208px). The node now automatically mirrors configurations between encode and decode if only one is connected. Furthermore, when TensorRT is active on either endpoint, both encoding and decoding are strictly locked to TensorRT with synchronized runner flags, completely eliminating silent FP16 fallbacks.
+  - **Automatic Intermediate ONNX Cleanup on Engine Build:** In the `SeedVR2 Build TensorRT VAE Engines` node and loader compilation routines, intermediate `.onnx` and companion `.onnx.data` files are now automatically purged immediately after the TensorRT `.rtxplan` engine has been successfully generated, saving gigabytes of disk space per build.
+  - **Node Display Name Cleanup:** Streamlined node title to `SeedVR2 Video Upscaler` by removing legacy version suffixes from node registration.
+- **Technical Details:** See [v1.6.5 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.5) for complete explanation
+
 ## v1.6.4 — 2026-10-10
 - **Summary:** Updated auto-download repository for ConvRot INT8 and w4a8 DiT models:
   - **ConvRot INT8 & w4a8 Model Registry Migration:** Updated the auto-download source repository for all 3B / 7B / 7B sharp ConvRot INT8 and asym w4a8 INT8 DiT models to [`ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8`](https://huggingface.co/ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8).
