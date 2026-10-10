@@ -7,6 +7,12 @@
 
 # Changelog
 
+## v1.6.4 — 2026-10-10
+- **Summary:** Updated auto-download repository for ConvRot INT8 and w4a8 DiT models:
+  - **ConvRot INT8 & w4a8 Model Registry Migration:** Updated the auto-download source repository for all 3B / 7B / 7B sharp ConvRot INT8 and asym w4a8 INT8 DiT models to [`ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8`](https://huggingface.co/ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8).
+  - **Direct Root-Level File Resolution:** Aligned remote download filenames directly with root-level repository assets (`seedvr2_3b_convrot_int8.safetensors`, `seedvr2_7b_convrot_int8.safetensors`, `seedvr2_7b_sharp_convrot_int8.safetensors`, and respective w4a8 counterparts) with SHA256 integrity pinning, removing unnecessary remote subfolder indirection.
+- **Technical Details:** See [v1.6.4 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.4) for complete explanation
+
 ## v1.6.3 — 2026-10-09
 - **Summary:** Dynamic `triton-windows` resolution & unpinning:
   - **Dynamic Triton resolution:** Removed hardcoded version pin (`triton-windows==3.5.1.post24`) from `requirements-windows-cu132.txt`. The installer and runtime setup now dynamically resolve and install the latest available `triton-windows` release from PyPI, automatically adapting to newer PyTorch runtimes and CUDA environments without version locks.

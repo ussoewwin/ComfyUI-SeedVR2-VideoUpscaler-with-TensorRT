@@ -7,6 +7,12 @@
 
 # 更新日志
 
+## v1.6.4 — 2026-10-10
+- **摘要：** 更新 ConvRot INT8 与 w4a8 DiT 模型的自动下载仓库：
+  - **ConvRot INT8 与 w4a8 模型注册表迁移：** 将所有 3B / 7B / 7B sharp ConvRot INT8 及非对称 w4a8 INT8 DiT 模型的自动下载源仓库更新为 [`ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8`](https://huggingface.co/ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8)。
+  - **直链根目录文件解析：** 远程下载文件名直接对齐根目录资源（`seedvr2_3b_convrot_int8.safetensors`、`seedvr2_7b_convrot_int8.safetensors`、`seedvr2_7b_sharp_convrot_int8.safetensors` 及其对应的 w4a8 文件），保留 SHA256 完整性校验，移除多余的子目录层级。
+- **技术详情：** 参见 [v1.6.4 发行说明](v1.6.4.md) 获取完整说明
+
 ## v1.6.3 — 2026-10-09
 - **摘要：** `triton-windows` 动态解析与解除版本固定：
   - **动态 Triton 解析：** 从 `requirements-windows-cu132.txt` 中移除了硬编码版本绑定（`triton-windows==3.5.1.post24`）。安装流水线与运行时环境现会自动从 PyPI 解析并安装最新的 `triton-windows` 构建版本，自适应更新的 PyTorch 运行时与 CUDA 环境，无需手动维护或锁定版本。
