@@ -71,7 +71,8 @@
 
 #### 节点参数与设置
 
-- **`model`**：DiT 检查点（如 `seedvr2_7b_int8_convrot.safetensors`）。支持量化（INT8 / NVFP4）与 FP16 检查点。
+- **`model`**：DiT 检查点（如 `seedvr2_7b_int8_convrot.safetensors`）。支持量化（INT8 / NVFP4 / W4A8）与 FP16 检查点。
+  - *W4A8 支持说明：* W4A8 检查点（`seedvr2_7b_convrot_w4a8.safetensors`、`seedvr2_7b_sharp_convrot_w4a8.safetensors`）仅在本传统加载器上能以低显存（Low VRAM）模式运行。W4A8 模型仅在此标准 / 传统加载器节点上保证正常运行。
 - **`device`**：DiT 推理的计算设备。
 - **`blocks_to_swap`**：推理时在设备之间交换的 transformer 块数量（0 = 禁用）。需要设置 `offload_device` 且与 `device` 不同。
 - **`swap_io_components`**：将输入/输出嵌入与归一化层卸载到卸载设备。需要设置 `offload_device` 且与 `device` 不同。
@@ -91,6 +92,7 @@
 #### 节点参数与设置
 
 - **`model`**：DiT 检查点（如 `seedvr2_7b_int8_convrot.safetensors`）。支持量化（INT8 / NVFP4）与 FP16 检查点。
+  - *W4A8 注意事项：* 在 DisTorch2 下加载 W4A8 模型反而会导致显存（VRAM）开销增加。因此 DisTorch2 不保证支持 W4A8 模型；运行 W4A8 检查点时请务必使用标准 / 传统加载器（**`SeedVR2 (Down)Load DiT Model`**）。
 - **`device`**：DiT 推理的计算设备。
 - **`attention_mode`** / **`sparge_topk`**：注意力后端与 SpargeAttn KV 保留比例（与标准加载器相同）。
 - **`distorch2_enabled`**：启用 DisTorch2 放置。关闭时行为等同标准加载器。

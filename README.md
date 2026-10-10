@@ -71,7 +71,8 @@ The **`SeedVR2 (Down)Load DiT Model`** node is the standard DiT loader. It loads
 
 #### Node Parameters & Settings
 
-- **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4) and FP16 checkpoints are both supported.
+- **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4 / W4A8) and FP16 checkpoints are supported.
+  - *W4A8 Support Note:* W4A8 checkpoints (`seedvr2_7b_convrot_w4a8.safetensors`, `seedvr2_7b_sharp_convrot_w4a8.safetensors`) operate with low VRAM consumption exclusively on this legacy loader. Operation of W4A8 is officially guaranteed only on this standard/legacy loader node.
 - **`device`**: Compute device for DiT inference.
 - **`blocks_to_swap`**: Number of transformer blocks swapped between devices during inference (0 = disabled). Requires `offload_device` to be set and different from `device`.
 - **`swap_io_components`**: Offload input/output embeddings and normalization layers to the offload device. Requires `offload_device` to be set and different from `device`.
@@ -90,7 +91,8 @@ The **`SeedVR2 (Down)Load DiT Model with Distorch2`** node hosts the entire (qua
 
 #### Node Parameters & Settings
 
-- **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4) and FP16 checkpoints are both supported.
+- **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4) and FP16 checkpoints are supported.
+  - *W4A8 Notice:* Running W4A8 models under DisTorch2 counterproductively increases VRAM consumption. Consequently, W4A8 operation is NOT guaranteed on DisTorch2; always use the standard/legacy loader (**`SeedVR2 (Down)Load DiT Model`**) for W4A8 models.
 - **`device`**: Compute device for DiT inference.
 - **`attention_mode`** / **`sparge_topk`**: Attention backend and SpargeAttn KV keep ratio (identical to the standard loader).
 - **`distorch2_enabled`**: Enable DisTorch2 placement. When off, behaves like the standard loader.
