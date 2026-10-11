@@ -17,7 +17,7 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 ### 1.1. Standard 7B Models Overview
 
 | Quantization Format | GEMM Mode / Kernel | Latent Cosine (↑) | Latent MSE (↓) | Image SSIM (↑) | Image MSE (↓) | Wall Time (s) | Speedup (↑) | Peak VRAM | VRAM Saving | Same-Image Rate | Bifurcated Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **FP16 Reference** | Native `torch.float16` | 1.00000 | 0.000 | 1.000000 | 0.000000 | ~121–131s | 1.00x | 16.04–16.07 GiB | baseline | 25/25 (100%) | 0/25 (0%) |
 | **ConvRot INT8** | Native INT8 (`int8_tensorwise`, dequant GEMM) | **0.99892** | **1.800e-03** | **0.994682** | **0.920831** | **24.51s** | **4.95x** | **8.53 GiB** | **−46.8%** | **25/25 (100%)** | **0/25 (0%)** |
 | **ConvRot W4A8** | Native W4A8 (`asym_w4a8_int8` + ConvRot, SM80+) | **0.98672** | **2.234e-02** | **0.976833** | **4.567560** | **14.32s** | **9.04x** | **5.69 GiB** | **−64.5%** | **25/25 (100%)** | **0/25 (0%)** |
@@ -26,7 +26,7 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 ### 1.2. Sharp Variant 7B Models Overview
 
 | Quantization Format | GEMM Mode / Kernel | Latent Cosine (↑) | Latent MSE (↓) | Image SSIM (↑) | Image MSE (↓) | Wall Time (s) | Speedup (↑) | Peak VRAM | VRAM Saving | Same-Image Rate | Bifurcated Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Sharp FP16 Reference** | Native `torch.float16` | 1.00000 | 0.000 | 1.000000 | 0.000000 | ~117–125s | 1.00x | 16.04–16.07 GiB | baseline | 25/25 (100%) | 0/25 (0%) |
 | **Sharp ConvRot INT8** | Native INT8 (`int8_tensorwise`, dequant GEMM) | **0.99766** | **3.939e-03** | **0.992470** | **1.306679** | **31.38s** | **3.98x** | **8.53 GiB** | **−46.8%** | **25/25 (100%)** | **0/25 (0%)** |
 | **Sharp ConvRot W4A8** | Native W4A8 (`asym_w4a8_int8` + ConvRot, SM80+) | **0.97682** | **3.893e-02** | **0.964523** | **6.300442** | **11.18s** | **10.49x** | **5.69 GiB** | **−64.5%** | **0/25 (0%)** | **0/25 (0%)** |
@@ -35,7 +35,7 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 ### 1.3. 3B Models Overview
 
 | Quantization Format | GEMM Mode / Kernel | Latent Cosine (↑) | Latent MSE (↓) | Image SSIM (↑) | Image MSE (↓) | Wall Time (s) | Speedup (↑) | Peak VRAM | VRAM Saving | Same-Image Rate | Bifurcated Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **3B FP16 Reference** | Native `torch.float16` | 1.00000 | 0.000 | 1.000000 | 0.000000 | ~11.93–13.10s | 1.00x | 7.17–7.20 GiB | baseline | 25/25 (100%) | 0/25 (0%) |
 | **3B ConvRot INT8** | Native INT8 (`int8_tensorwise`, dequant GEMM) | **0.99724** | **5.204e-03** | **0.992455** | **1.547978** | **9.55s** | **1.25x** | **5.69 GiB** | **−20.6%** | **25/25 (100%)** | **0/25 (0%)** |
 | **3B ConvRot W4A8** | Native W4A8 (`asym_w4a8_int8` + ConvRot, SM80+) | **0.97093** | **5.560e-02** | **0.963753** | **8.040325** | **9.02s** | **1.38x** | **5.69 GiB** | **−20.6%** | **0/25 (0%)** | **0/25 (0%)** |
