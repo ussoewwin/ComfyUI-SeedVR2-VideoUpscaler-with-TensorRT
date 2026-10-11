@@ -11,7 +11,7 @@
 
 [SeedVR2](https://github.com/ByteDance-Seed/SeedVR) 的 ComfyUI 官方发布版本，支持高质量视频和图像放大。
 
-本仓库是官方仓库（[https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)）的 Fork，基于 Apache 2.0 许可证创建。独立实现了 ConvRot INT8 与 NVFP4 量化模型支持，以及显存（VRAM）节省功能。
+本仓库是官方仓库（[https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)）的 Fork，基于 Apache 2.0 许可证创建。独立实现了 ConvRot INT8、ConvRot W4A8 与 NVFP4 量化模型支持，以及显存（VRAM）节省功能。
 
 [![SeedVR2 v2.5 Deep Dive Tutorial](https://img.youtube.com/vi/MBtWYXq_r60/maxresdefault.jpg)](https://youtu.be/MBtWYXq_r60)
 
