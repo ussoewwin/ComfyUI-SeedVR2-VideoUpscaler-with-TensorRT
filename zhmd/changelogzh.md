@@ -7,6 +7,12 @@
 
 # 更新日志
 
+## v1.6.6 — 2026-10-11
+- **摘要：** ConvRot W4A8 DiT 模型原生完全支持与 DisTorch2 兼容范围说明：
+  - **完全支持 3B / 7B / 7B Sharp ConvRot W4A8 模型：** 模型注册表、自动下载管线及推理引擎全面完整支持 `seedvr2_3b_convrot_w4a8.safetensors`、`seedvr2_7b_convrot_w4a8.safetensors` 以及 `seedvr2_7b_sharp_convrot_w4a8.safetensors`。模型加载器下拉菜单规范统一使用标准的 `convrot` 名称，杜绝本地已有模型时的重复误下载，同时保留别名解析机制以完全兼容历史工作流。
+  - **W4A8 的 DisTorch2 兼容范围限制说明：** 非对称 W4A8 量化模型仅支持通过标准 DiT 加载器（`SeedVR2 (Down)Load DiT Model`）加载使用。由于非对称 4-bit 打包权重的分块 CPU 内存流式传输与权重分发机制限制，DisTorch2（`SeedVR2 (Down)Load DiT Model with Distorch2`）不支持 W4A8 模型。
+- **技术详情：** 参见 [v1.6.6 发行说明](v1.6.6.md) 获取完整说明
+
 ## v1.6.5 — 2026-10-10
 - **摘要：** TensorRT VAE 回退路径彻底清除与引擎构建中间 ONNX 自动删除：
   - **清除 SeedVR2 Video Upscaler 的 PyTorch VAE 意外回退：** 修复了当仅连接单个 VAE 输入端（`vae_decode` 或 `vae_encode`）时，另一端因空配置而意外脱落回退到标准 PyTorch FP16 VAE、导致在高分辨率（如 4208px）下发生严重 CUDA 显存溢出（OOM）的问题。现已实现单端连接时自动双向同步配置；且只要任一端指定了 TensorRT，Encode 与 Decode 均强制锁定为 TensorRT 执行并同步 Runner 状态标识，彻底杜绝静默回退到 FP16 路径。

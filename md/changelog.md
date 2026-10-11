@@ -7,6 +7,12 @@
 
 # Changelog
 
+## v1.6.6 — 2026-10-11
+- **Summary:** Full native support for ConvRot W4A8 DiT models & DisTorch2 compatibility scope:
+  - **Full Support for 3B / 7B / 7B Sharp ConvRot W4A8 Models:** Complete support across model registry, automated download pipeline, and native inference for `seedvr2_3b_convrot_w4a8.safetensors`, `seedvr2_7b_convrot_w4a8.safetensors`, and `seedvr2_7b_sharp_convrot_w4a8.safetensors`. The model loader dropdown exclusively registers canonical `convrot` model names to eliminate redundant redownloads, with backwards-compatible alias resolution for legacy workflows.
+  - **W4A8 DisTorch2 Compatibility Scope:** Asymmetric W4A8 quantized models are strictly supported via the standard DiT loader (`SeedVR2 (Down)Load DiT Model`). DisTorch2 (`SeedVR2 (Down)Load DiT Model with Distorch2`) does not support W4A8 models due to blockwise CPU RAM streaming and weight-dispatch constraints specific to asymmetric 4-bit packed weights.
+- **Technical Details:** See [v1.6.6 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.6) for complete explanation
+
 ## v1.6.5 — 2026-10-10
 - **Summary:** TensorRT VAE fallback elimination & engine build ONNX auto-cleanup:
   - **Eliminate PyTorch VAE Fallback in SeedVR2 Video Upscaler:** Fixed an issue where connecting only one VAE input (`vae_decode` or `vae_encode`) left the other as an empty configuration, unintentionally causing the encoder to drop back to the standard PyTorch FP16 VAE and triggering massive CUDA out-of-memory errors on high resolutions (e.g. 4208px). The node now automatically mirrors configurations between encode and decode if only one is connected. Furthermore, when TensorRT is active on either endpoint, both encoding and decoding are strictly locked to TensorRT with synchronized runner flags, completely eliminating silent FP16 fallbacks.
