@@ -19,7 +19,8 @@
 
 ### 完整工作流概览（TensorRT VAE 与量化模型）
 
-- 工作流 JSON：[`example_workflows/SeedVR2_tensorrt.json`](../example_workflows/SeedVR2_tensorrt.json)
+- 工作流 JSON（TensorRT VAE + DisTorch2 / 量化 DiT）：[`example_workflows/SeedVR2_tensorrt.json`](../example_workflows/SeedVR2_tensorrt.json)
+- 工作流 JSON（标准 DiT 加载器 / W4A8 与原生算子）：[`example_workflows/SeedVR2.json`](../example_workflows/SeedVR2.json)
 
 ![Usage Example - Full Workflow](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_01.png)
 

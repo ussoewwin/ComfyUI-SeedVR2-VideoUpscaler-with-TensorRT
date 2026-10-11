@@ -19,7 +19,8 @@ This repository is a fork of the official repository ([https://github.com/numz/C
 
 ### Complete Workflow Overview (TensorRT VAE & Quantized Models)
 
-- Workflow JSON: [`example_workflows/SeedVR2_tensorrt.json`](example_workflows/SeedVR2_tensorrt.json)
+- Workflow JSON (TensorRT VAE + DisTorch2 / Quantized DiT): [`example_workflows/SeedVR2_tensorrt.json`](example_workflows/SeedVR2_tensorrt.json)
+- Workflow JSON (Standard DiT Loader / W4A8 & Native Ops): [`example_workflows/SeedVR2.json`](example_workflows/SeedVR2.json)
 
 ![Usage Example - Full Workflow](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/usage_01.png)
 
