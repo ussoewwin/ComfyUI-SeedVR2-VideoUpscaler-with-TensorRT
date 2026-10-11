@@ -121,15 +121,25 @@ def find_model_file(filename: str, fallback_dir: Optional[str] = None) -> str:
     # Get all model files
     model_files = get_all_model_files()
     
-    # Return path if found
+    # Return path if found directly
     if filename in model_files:
         return model_files[filename]
     
+    # Try resolving alias (e.g. seedvr2_7b_w4a8.safetensors -> seedvr2_7b_convrot_w4a8.safetensors)
+    try:
+        from .model_registry import resolve_model_alias
+        resolved_name = resolve_model_alias(filename)
+        if resolved_name in model_files:
+            return model_files[resolved_name]
+    except Exception:
+        resolved_name = filename
+    
     # Fallback to specified directory or base cache dir
+    target_name = resolved_name if 'resolved_name' in locals() else filename
     if fallback_dir:
-        return os.path.join(fallback_dir, filename)
+        return os.path.join(fallback_dir, target_name)
     else:
-        return os.path.join(get_base_cache_dir(), filename)
+        return os.path.join(get_base_cache_dir(), target_name)
 
 
 def get_validation_cache_path(cache_dir: Optional[str] = None) -> str:

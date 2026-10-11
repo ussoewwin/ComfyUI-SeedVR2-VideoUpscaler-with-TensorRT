@@ -39,7 +39,6 @@ MODEL_REGISTRY = {
     # HSWQ INT8 / NVFP4 (native VRAM path; same as 7B)
     "seedvr2_3b_convrot_int8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", size="3B", precision="int8_tensorwise_convrot", sha256="c3dec8bcc5916843a8a858572970597462e1f2dc598d6dfd818f6cd40f53a157"),
     "seedvr2_3b_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="3B", precision="nvfp4", sha256="c8dea38b04d43295621726e2cd371c0d2d001006169c113aea17950f2cb2e295"),
-    "seedvr2_3b_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", remote_filename="seedvr2_3b_convrot_w4a8.safetensors", size="3B", precision="asym_w4a8_int8"),
     "seedvr2_3b_convrot_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", size="3B", precision="asym_w4a8_int8"),
     
     # 7B models
@@ -47,19 +46,33 @@ MODEL_REGISTRY = {
     # HSWQ INT8 (int8_tensorwise + ConvRot) — native INT8 inference target (VRAM-saving path)
     "seedvr2_7b_convrot_int8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", size="7B", precision="int8_tensorwise_convrot", sha256="5aa0d25fc9d35e449b659d0c9a5dcb22e2a4fa04032101b95a39da42b32c1be6"),
     "seedvr2_7b_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="nvfp4", sha256="cc4af1a7bd5377066496f393555478323e806fa21163bdbe3409451aface9b93"),
-    "seedvr2_7b_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", remote_filename="seedvr2_7b_convrot_w4a8.safetensors", size="7B", precision="asym_w4a8_int8"),
     "seedvr2_7b_convrot_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", size="7B", precision="asym_w4a8_int8"),
     
     # 7B sharp variants
     "seedvr2_ema_7b_sharp_fp16.safetensors": ModelInfo(size="7B", precision="fp16", variant="sharp", sha256="20a93e01ff24beaeebc5de4e4e5be924359606c356c9c51509fba245bd2d77dd"),
     "seedvr2_7b_sharp_convrot_int8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", size="7B", precision="int8_tensorwise_convrot", variant="sharp", sha256="db48be2f1cc7e36b01a2aa529810f5d9c6a971edd29be225cf1b0eb18d51c366"),
     "seedvr2_7b_sharp_nvfp4.safetensors": ModelInfo(repo="Comfy-Org/SeedVR2", subdir="diffusion_models", size="7B", precision="nvfp4", variant="sharp", sha256="80d57af7722f5a5bd4c01d2ab2688f2bf05e552e59d3d3287257de709db10397"),
-    "seedvr2_7b_sharp_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", remote_filename="seedvr2_7b_sharp_convrot_w4a8.safetensors", size="7B", precision="asym_w4a8_int8", variant="sharp"),
     "seedvr2_7b_sharp_convrot_w4a8.safetensors": ModelInfo(repo="ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", size="7B", precision="asym_w4a8_int8", variant="sharp"),
     
     # VAE models
     "ema_vae_fp16.safetensors": ModelInfo(category="vae", precision="fp16", sha256="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"),
 }
+
+# Aliases for backward compatibility or alternate naming
+MODEL_ALIASES = {
+    "seedvr2_3b_w4a8.safetensors": "seedvr2_3b_convrot_w4a8.safetensors",
+    "seedvr2_7b_w4a8.safetensors": "seedvr2_7b_convrot_w4a8.safetensors",
+    "seedvr2_7b_sharp_w4a8.safetensors": "seedvr2_7b_sharp_convrot_w4a8.safetensors",
+}
+
+def resolve_model_alias(model_name: str) -> str:
+    """Resolve model name alias to canonical name in registry"""
+    return MODEL_ALIASES.get(model_name, model_name)
+
+def get_model_info(model_name: str) -> Optional[ModelInfo]:
+    """Get ModelInfo for a model name, resolving aliases if necessary"""
+    canonical_name = resolve_model_alias(model_name)
+    return MODEL_REGISTRY.get(canonical_name)
 
 # Configuration constants
 DEFAULT_DIT = "seedvr2_7b_convrot_int8.safetensors"
@@ -71,7 +84,8 @@ def get_default_models(category: str) -> List[str]:
 
 def get_model_repo(model_name: str) -> str:
     """Get repository for a specific model"""
-    return MODEL_REGISTRY.get(model_name, ModelInfo()).repo
+    info = get_model_info(model_name)
+    return info.repo if info else ModelInfo().repo
 
 def resolve_dit_config_folder(dit_model: str) -> str:
     """
@@ -81,7 +95,7 @@ def resolve_dit_config_folder(dit_model: str) -> str:
     when the model is registered (including HSWQ INT8 names). Prefer explicit
     7b/3b tokens in the basename so untagged temp names do not silently pick 3B.
     """
-    info = MODEL_REGISTRY.get(dit_model)
+    info = get_model_info(dit_model)
     if info is not None and info.category == "dit":
         size = (info.size or "").upper()
         if size == "7B":

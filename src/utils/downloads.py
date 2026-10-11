@@ -11,7 +11,7 @@ from typing import Optional
 from tqdm import tqdm
 import time
 
-from .model_registry import MODEL_REGISTRY, DEFAULT_VAE
+from .model_registry import MODEL_REGISTRY, DEFAULT_VAE, get_model_info, resolve_model_alias
 from .constants import (
     get_base_cache_dir,
     get_all_model_paths,
@@ -172,7 +172,7 @@ def download_weight(dit_model: Optional[str] = None, vae_model: Optional[str] = 
     os.makedirs(cache_dir, exist_ok=True)
     
     files_to_download = [
-        (name, MODEL_REGISTRY.get(name))
+        (resolve_model_alias(name), get_model_info(name))
         for name in (dit_model, vae_model)
         if name
     ]
