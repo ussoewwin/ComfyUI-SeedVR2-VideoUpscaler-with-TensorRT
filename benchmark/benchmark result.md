@@ -1,6 +1,6 @@
-# SeedVR2 7B Quantization Benchmark Test Results
+# SeedVR2 7B & 3B Quantization Benchmark Test Results
 
-Deterministic per-step latent trajectory divergence and image quality benchmark comparing **FP16 reference** vs **ConvRot INT8** vs **ConvRot W4A8** vs **NVFP4** across both standard and sharp variants on the SeedVR2 7B architecture.
+Deterministic per-step latent trajectory divergence and image quality benchmark comparing **FP16 reference** vs **ConvRot INT8** vs **ConvRot W4A8** vs **NVFP4** across standard 7B, sharp 7B, and 3B variants on the SeedVR2 architecture.
 
 **Source:** `benchmark/benchmark result.txt`  
 **Evaluation Scripts:**
@@ -17,7 +17,7 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 ### 1.1. Standard 7B Models Overview
 
 | Quantization Format | GEMM Mode / Kernel | Latent Cosine (↑) | Latent MSE (↓) | Image SSIM (↑) | Image MSE (↓) | Wall Time (s) | Speedup (↑) | Peak VRAM | VRAM Saving | Same-Image Rate | Bifurcated Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **FP16 Reference** | Native `torch.float16` | 1.00000 | 0.000 | 1.000000 | 0.000000 | ~121–131s | 1.00x | 16.04–16.07 GiB | baseline | 25/25 (100%) | 0/25 (0%) |
 | **ConvRot INT8** | Native INT8 (`int8_tensorwise`, dequant GEMM) | **0.99892** | **1.800e-03** | **0.994682** | **0.920831** | **24.51s** | **4.95x** | **8.53 GiB** | **−46.8%** | **25/25 (100%)** | **0/25 (0%)** |
 | **ConvRot W4A8** | Native W4A8 (`asym_w4a8_int8` + ConvRot, SM80+) | **0.98672** | **2.234e-02** | **0.976833** | **4.567560** | **14.32s** | **9.04x** | **5.69 GiB** | **−64.5%** | **25/25 (100%)** | **0/25 (0%)** |
@@ -26,11 +26,20 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 ### 1.2. Sharp Variant 7B Models Overview
 
 | Quantization Format | GEMM Mode / Kernel | Latent Cosine (↑) | Latent MSE (↓) | Image SSIM (↑) | Image MSE (↓) | Wall Time (s) | Speedup (↑) | Peak VRAM | VRAM Saving | Same-Image Rate | Bifurcated Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Sharp FP16 Reference** | Native `torch.float16` | 1.00000 | 0.000 | 1.000000 | 0.000000 | ~117–125s | 1.00x | 16.04–16.07 GiB | baseline | 25/25 (100%) | 0/25 (0%) |
 | **Sharp ConvRot INT8** | Native INT8 (`int8_tensorwise`, dequant GEMM) | **0.99766** | **3.939e-03** | **0.992470** | **1.306679** | **31.38s** | **3.98x** | **8.53 GiB** | **−46.8%** | **25/25 (100%)** | **0/25 (0%)** |
 | **Sharp ConvRot W4A8** | Native W4A8 (`asym_w4a8_int8` + ConvRot, SM80+) | **0.97682** | **3.893e-02** | **0.964523** | **6.300442** | **11.18s** | **10.49x** | **5.69 GiB** | **−64.5%** | **0/25 (0%)** | **0/25 (0%)** |
 | **Sharp NVFP4** | Stock ComfyUI `mixed_precision` (dequant GEMM) | **0.94510** | **9.109e-02** | **0.937356** | **11.337591** | **11.59s** | **10.15x** | **5.72 GiB** | **−64.4%** | **0/25 (0%)** | **0/25 (0%)** |
+
+### 1.3. 3B Models Overview
+
+| Quantization Format | GEMM Mode / Kernel | Latent Cosine (↑) | Latent MSE (↓) | Image SSIM (↑) | Image MSE (↓) | Wall Time (s) | Speedup (↑) | Peak VRAM | VRAM Saving | Same-Image Rate | Bifurcated Rate |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **3B FP16 Reference** | Native `torch.float16` | 1.00000 | 0.000 | 1.000000 | 0.000000 | ~11.93–13.10s | 1.00x | 7.17–7.20 GiB | baseline | 25/25 (100%) | 0/25 (0%) |
+| **3B ConvRot INT8** | Native INT8 (`int8_tensorwise`, dequant GEMM) | **0.99724** | **5.204e-03** | **0.992455** | **1.547978** | **9.55s** | **1.25x** | **5.69 GiB** | **−20.6%** | **25/25 (100%)** | **0/25 (0%)** |
+| **3B ConvRot W4A8** | Native W4A8 (`asym_w4a8_int8` + ConvRot, SM80+) | **0.97093** | **5.560e-02** | **0.963753** | **8.040325** | **9.02s** | **1.38x** | **5.69 GiB** | **−20.6%** | **0/25 (0%)** | **0/25 (0%)** |
+| **3B NVFP4** | Stock ComfyUI `mixed_precision` (dequant GEMM) | **0.93334** | **1.268e-01** | **0.936180** | **14.911295** | **9.70s** | **1.35x** | **5.72 GiB** | **−20.6%** | **0/25 (0%)** | **0/25 (0%)** |
 
 *Note: Wall time and Peak VRAM measured on seed 99999.*
 
@@ -176,7 +185,7 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 | **1024** | 0.96519 | 5.772e-02 | 0.0000 | 9.280363 | 0.948931 | `drifted (different image)` |
 | **1337** | 0.96421 | 5.974e-02 | 0.0000 | 8.884372 | 0.952592 | `drifted (different image)` |
 | **2048** | 0.96532 | 5.773e-02 | 0.0000 | 8.867726 | 0.952872 | `drifted (different image)` |
-| **3141** | 0.96506 | 5.999e-02 | 0.0000 | 8.877296 | 0.952960 | `drifted (different image)` |
+| **3141** | 0.96506 | 5.799e-02 | 0.0000 | 8.877296 | 0.952960 | `drifted (different image)` |
 | **4096** | 0.96283 | 6.270e-02 | 0.0000 | 8.803332 | 0.954634 | `drifted (different image)` |
 | **5555** | 0.96344 | 6.063e-02 | 0.0000 | 9.099228 | 0.952041 | `drifted (different image)` |
 | **6891** | 0.96374 | 6.106e-02 | 0.0000 | 8.910255 | 0.952832 | `drifted (different image)` |
@@ -362,6 +371,171 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 
 ---
 
+### 2.7. SeedVR2 3B ConvRot INT8
+
+#### Architecture Profile & Execution Configuration
+- **Model Checkpoint:** `seedvr2_3b_convrot_int8.safetensors`
+- **Reference Model:** `seedvr2_3b_fp16.safetensors`
+- **GEMM Mode:** Native INT8 (`int8_tensorwise`, dequant GEMM)
+- **Forward Statistics:** INT8 forward statistics are not exposed by the HSWQ nodes package
+- **Performance:** Wall time: 9.55s (vs 3B FP16: 11.93s, **1.25x speedup**) | Peak VRAM: 5.69 GiB (vs 3B FP16: 7.17 GiB, **20.6% memory reduction**)
+
+#### Metric Overview
+| Metric / Property | Value | Evaluation / Status |
+| :--- | :--- | :--- |
+| **Mean Latent Cosine** (↑ better) | **0.99724** | Pristine trajectory preservation on 3B architecture |
+| **Min Latent Cosine** (↑ better) | **0.99679** (Seed 65536) | Exceptionally stable floor across all runs |
+| **Max Latent Cosine** (↑ better) | **0.99750** (Seed 20240) | Near bit-identical trajectory alignment |
+| **Mean Latent MSE** (↓ better) | **5.204e-03** | Extremely low latent reconstruction error |
+| **Mean Image SSIM** (↑ better) | **0.992455** (Min: 0.991583, Max: 0.993003) | Exceptional structural similarity retention |
+| **Mean Image MSE** (↓ better) | **1.547978** (Min: 1.460683, Max: 1.699673) | Sub-1.7 pixel reconstruction error |
+| **Max Step Drop** (↓ better) | **0.0000** | Zero single-step trajectory divergence |
+| **Same-Image Rate** | **25/25 (100%)** | All 25 seeds generate the identical image |
+| **Bifurcated Seeds Rate** | **0/25 (0%)** | Zero bifurcation events |
+
+#### Side-by-Side per Seed (3B ConvRot INT8)
+| Seed | Latent Cosine (↑) | Latent MSE (↓) | Max Drop (↓) | Image MSE (↓) | Image SSIM (↑) | Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **42** | 0.99735 | 5.065e-03 | 0.0000 | 1.598828 | 0.992327 | `same-image` |
+| **137** | 0.99709 | 5.538e-03 | 0.0000 | 1.587684 | 0.992136 | `same-image` |
+| **256** | 0.99701 | 5.685e-03 | 0.0000 | 1.612331 | 0.992275 | `same-image` |
+| **512** | 0.99744 | 4.909e-03 | 0.0000 | 1.476956 | 0.992854 | `same-image` |
+| **777** | 0.99739 | 4.989e-03 | 0.0000 | 1.517438 | 0.992741 | `same-image` |
+| **1024** | 0.99735 | 5.021e-03 | 0.0000 | 1.591048 | 0.992579 | `same-image` |
+| **1337** | 0.99745 | 4.796e-03 | 0.0000 | 1.475101 | 0.992749 | `same-image` |
+| **2048** | 0.99720 | 5.322e-03 | 0.0000 | 1.522122 | 0.992490 | `same-image` |
+| **3141** | 0.99739 | 4.921e-03 | 0.0000 | 1.634311 | 0.992461 | `same-image` |
+| **4096** | 0.99721 | 5.306e-03 | 0.0000 | 1.540704 | 0.992509 | `same-image` |
+| **5555** | 0.99697 | 5.748e-03 | 0.0000 | 1.632369 | 0.992197 | `same-image` |
+| **6891** | 0.99701 | 5.688e-03 | 0.0000 | 1.518481 | 0.992267 | `same-image` |
+| **7777** | 0.99711 | 5.526e-03 | 0.0000 | 1.579360 | 0.992192 | `same-image` |
+| **8192** | 0.99723 | 5.289e-03 | 0.0000 | 1.468337 | 0.992555 | `same-image` |
+| **9999** | 0.99735 | 4.975e-03 | 0.0000 | 1.621438 | 0.992382 | `same-image` |
+| **12345** | 0.99702 | 5.668e-03 | 0.0000 | 1.535722 | 0.992195 | `same-image` |
+| **20240** | 0.99750 | 4.774e-03 | 0.0000 | 1.488438 | 0.993003 | `same-image` |
+| **32768** | 0.99730 | 5.143e-03 | 0.0000 | 1.517253 | 0.992525 | `same-image` |
+| **44444** | 0.99733 | 5.091e-03 | 0.0000 | 1.526772 | 0.992500 | `same-image` |
+| **54321** | 0.99720 | 5.347e-03 | 0.0000 | 1.583769 | 0.992191 | `same-image` |
+| **65536** | 0.99679 | 6.098e-03 | 0.0000 | 1.699673 | 0.991583 | `same-image` |
+| **71828** | 0.99746 | 4.900e-03 | 0.0000 | 1.460683 | 0.992514 | `same-image` |
+| **88888** | 0.99734 | 5.054e-03 | 0.0000 | 1.508571 | 0.992564 | `same-image` |
+| **94103** | 0.99713 | 5.446e-03 | 0.0000 | 1.560227 | 0.992083 | `same-image` |
+| **99999** | 0.99748 | 4.799e-03 | 0.0000 | 1.462352 | 0.992817 | `same-image` |
+| **Mean** | **0.99724** | **5.204e-03** | **0.0000** | **1.547978** | **0.992455** | **25/25 same-image (100%)** |
+
+---
+
+### 2.8. SeedVR2 3B ConvRot W4A8
+
+#### Architecture Profile & Execution Configuration
+- **Model Checkpoint:** `seedvr2_3b_convrot_w4a8.safetensors`
+- **Reference Model:** `seedvr2_3b_fp16.safetensors`
+- **GEMM Mode:** Native W4A8 (`asym_w4a8_int8`, `AsymW4A8Int8Layout` + ConvRot)
+- **Weight Storage:** INT4 packed storage (`torch.int8 [out_features, in_features // 2]`)
+- **ConvRot Rotation:** Hadamard orthogonal rotation active (`convrot_groupsize=256`)
+- **Scale Hierarchy:** FP8 group scale (`weight_s_rel`) + FP32 channel scale (`weight_s_channel`)
+- **Compute Kernel:** `comfy_kitchen` `w4a8_int8_linear` / dequant GEMM on SM80+
+- **Performance:** Wall time: 9.02s (vs 3B FP16: 12.41s, **1.38x speedup**) | Peak VRAM: 5.69 GiB (vs 3B FP16: 7.17 GiB, **20.6% memory reduction**)
+
+#### Metric Overview
+| Metric / Property | Value | Evaluation / Status |
+| :--- | :--- | :--- |
+| **Mean Latent Cosine** (↑ better) | **0.97093** | Consistent trajectory stability across all 25 seeds |
+| **Min Latent Cosine** (↑ better) | **0.96981** (Seed 1024, 5555) | Predictable, tight performance floor |
+| **Max Latent Cosine** (↑ better) | **0.97230** (Seed 44444) | Bounded drift with strong semantic retention |
+| **Mean Latent MSE** (↓ better) | **5.560e-02** | Bounded error accumulation |
+| **Mean Image SSIM** (↑ better) | **0.963753** (Min: 0.961673, Max: 0.965323) | High structural fidelity |
+| **Mean Image MSE** (↓ better) | **8.040325** (Min: 7.814416, Max: 8.309586) | Controlled pixel variation |
+| **Max Step Drop** (↓ better) | **0.0000** | Zero trajectory bifurcation |
+| **Same-Image Rate** | **0/25 (0%)** | Continuous bounded drift under 4-bit weights |
+| **Bifurcated Seeds Rate** | **0/25 (0%)** | Zero bifurcation events (no structural collapse) |
+
+#### Side-by-Side per Seed (3B ConvRot W4A8)
+| Seed | Latent Cosine (↑) | Latent MSE (↓) | Max Drop (↓) | Image MSE (↓) | Image SSIM (↑) | Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **42** | 0.97114 | 5.534e-02 | 0.0000 | 8.015691 | 0.963087 | `drifted (different image)` |
+| **137** | 0.97039 | 5.671e-02 | 0.0000 | 8.309586 | 0.963015 | `drifted (different image)` |
+| **256** | 0.97111 | 5.524e-02 | 0.0000 | 8.056443 | 0.963971 | `drifted (different image)` |
+| **512** | 0.97122 | 5.532e-02 | 0.0000 | 7.814416 | 0.965323 | `drifted (different image)` |
+| **777** | 0.97160 | 5.472e-02 | 0.0000 | 7.887145 | 0.964348 | `drifted (different image)` |
+| **1024** | 0.96981 | 5.762e-02 | 0.0000 | 8.071762 | 0.963629 | `drifted (different image)` |
+| **1337** | 0.97078 | 5.530e-02 | 0.0000 | 7.848997 | 0.964699 | `drifted (different image)` |
+| **2048** | 0.97114 | 5.508e-02 | 0.0000 | 8.052877 | 0.964100 | `drifted (different image)` |
+| **3141** | 0.97143 | 5.409e-02 | 0.0000 | 7.935335 | 0.964071 | `drifted (different image)` |
+| **4096** | 0.97136 | 5.494e-02 | 0.0000 | 8.019708 | 0.965084 | `drifted (different image)` |
+| **5555** | 0.96981 | 5.749e-02 | 0.0000 | 8.004462 | 0.964192 | `drifted (different image)` |
+| **6891** | 0.97118 | 5.519e-02 | 0.0000 | 7.957605 | 0.964930 | `drifted (different image)` |
+| **7777** | 0.97004 | 5.756e-02 | 0.0000 | 8.068575 | 0.963506 | `drifted (different image)` |
+| **8192** | 0.97080 | 5.610e-02 | 0.0000 | 7.971283 | 0.964147 | `drifted (different image)` |
+| **9999** | 0.97043 | 5.594e-02 | 0.0000 | 8.293447 | 0.961873 | `drifted (different image)` |
+| **12345** | 0.97033 | 5.667e-02 | 0.0000 | 8.157631 | 0.962400 | `drifted (different image)` |
+| **20240** | 0.97072 | 5.621e-02 | 0.0000 | 7.951004 | 0.964799 | `drifted (different image)` |
+| **32768** | 0.97086 | 5.586e-02 | 0.0000 | 8.123813 | 0.963256 | `drifted (different image)` |
+| **44444** | 0.97230 | 5.302e-02 | 0.0000 | 7.947057 | 0.963703 | `drifted (different image)` |
+| **54321** | 0.97112 | 5.537e-02 | 0.0000 | 8.076583 | 0.963899 | `drifted (different image)` |
+| **65536** | 0.97150 | 5.422e-02 | 0.0000 | 8.063380 | 0.962298 | `drifted (different image)` |
+| **71828** | 0.97221 | 5.400e-02 | 0.0000 | 7.935223 | 0.963428 | `drifted (different image)` |
+| **88888** | 0.96999 | 5.732e-02 | 0.0000 | 8.104853 | 0.962733 | `drifted (different image)` |
+| **94103** | 0.97015 | 5.681e-02 | 0.0000 | 8.259025 | 0.961673 | `drifted (different image)` |
+| **99999** | 0.97179 | 5.399e-02 | 0.0000 | 8.082230 | 0.964467 | `drifted (different image)` |
+| **Mean** | **0.97093** | **5.560e-02** | **0.0000** | **8.040325** | **0.963753** | **25/25 drifted (100%)** |
+
+---
+
+### 2.9. SeedVR2 3B NVFP4
+
+#### Architecture Profile & Execution Configuration
+- **Model Checkpoint:** `seedvr2_3b_nvfp4.safetensors`
+- **Reference Model:** `seedvr2_3b_fp16.safetensors`
+- **GEMM Mode:** Stock ComfyUI `mixed_precision` (dequant GEMM)
+- **Patch Status:** No HSWQ TC patch applied; `QuantizedTensor` stays packed, matmul dequantizes
+- **Performance:** Wall time: 9.70s (vs 3B FP16: 13.10s, **1.35x speedup**) | Peak VRAM: 5.72 GiB (vs 3B FP16: 7.20 GiB, **20.6% memory reduction**)
+
+#### Metric Overview
+| Metric / Property | Value | Evaluation / Status |
+| :--- | :--- | :--- |
+| **Mean Latent Cosine** (↑ better) | **0.93334** | Gradual trajectory drift under stock dequant GEMM |
+| **Min Latent Cosine** (↑ better) | **0.93027** (Seed 54321) | Zero catastrophic collapse |
+| **Max Latent Cosine** (↑ better) | **0.93622** (Seed 71828) | Predictable trajectory floor |
+| **Mean Latent MSE** (↓ better) | **1.268e-01** | Moderate error accumulation without bifurcation |
+| **Mean Image SSIM** (↑ better) | **0.936180** (Min: 0.931307, Max: 0.939420) | Maintained structural silhouette |
+| **Mean Image MSE** (↓ better) | **14.911295** (Min: 14.444382, Max: 15.457009) | Substantial pixel variation |
+| **Max Step Drop** (↓ better) | **0.0000** | Zero discontinuous step drops |
+| **Same-Image Rate** | **0/25 (0%)** | Gradual trajectory drift across all runs |
+| **Bifurcated Seeds Rate** | **0/25 (0%)** | Zero bifurcation events (no structural collapse) |
+
+#### Side-by-Side per Seed (3B NVFP4)
+| Seed | Latent Cosine (↑) | Latent MSE (↓) | Max Drop (↓) | Image MSE (↓) | Image SSIM (↑) | Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **42** | 0.93496 | 1.240e-01 | 0.0000 | 14.623539 | 0.936537 | `drifted (different image)` |
+| **137** | 0.93236 | 1.284e-01 | 0.0000 | 15.064868 | 0.935126 | `drifted (different image)` |
+| **256** | 0.93275 | 1.273e-01 | 0.0000 | 14.940977 | 0.935563 | `drifted (different image)` |
+| **512** | 0.93546 | 1.231e-01 | 0.0000 | 14.472721 | 0.939420 | `drifted (different image)` |
+| **777** | 0.93437 | 1.251e-01 | 0.0000 | 14.699918 | 0.938006 | `drifted (different image)` |
+| **1024** | 0.93050 | 1.312e-01 | 0.0000 | 15.258422 | 0.935790 | `drifted (different image)` |
+| **1337** | 0.93288 | 1.261e-01 | 0.0000 | 14.793865 | 0.937152 | `drifted (different image)` |
+| **2048** | 0.93180 | 1.286e-01 | 0.0000 | 15.134623 | 0.934981 | `drifted (different image)` |
+| **3141** | 0.93376 | 1.246e-01 | 0.0000 | 14.869573 | 0.935094 | `drifted (different image)` |
+| **4096** | 0.93407 | 1.252e-01 | 0.0000 | 14.722128 | 0.939110 | `drifted (different image)` |
+| **5555** | 0.93284 | 1.270e-01 | 0.0000 | 15.038270 | 0.936600 | `drifted (different image)` |
+| **6891** | 0.93051 | 1.315e-01 | 0.0000 | 15.083158 | 0.935145 | `drifted (different image)` |
+| **7777** | 0.93153 | 1.301e-01 | 0.0000 | 14.979739 | 0.936102 | `drifted (different image)` |
+| **8192** | 0.93359 | 1.260e-01 | 0.0000 | 14.939871 | 0.937009 | `drifted (different image)` |
+| **9999** | 0.93096 | 1.291e-01 | 0.0000 | 15.457009 | 0.931307 | `drifted (different image)` |
+| **12345** | 0.93513 | 1.231e-01 | 0.0000 | 14.676622 | 0.937965 | `drifted (different image)` |
+| **20240** | 0.93386 | 1.255e-01 | 0.0000 | 14.683638 | 0.938733 | `drifted (different image)` |
+| **32768** | 0.93541 | 1.232e-01 | 0.0000 | 14.845179 | 0.936939 | `drifted (different image)` |
+| **44444** | 0.93508 | 1.235e-01 | 0.0000 | 14.898013 | 0.935000 | `drifted (different image)` |
+| **54321** | 0.93027 | 1.321e-01 | 0.0000 | 15.320377 | 0.934489 | `drifted (different image)` |
+| **65536** | 0.93464 | 1.236e-01 | 0.0000 | 14.890772 | 0.934804 | `drifted (different image)` |
+| **71828** | 0.93622 | 1.231e-01 | 0.0000 | 14.444382 | 0.937532 | `drifted (different image)` |
+| **88888** | 0.93328 | 1.263e-01 | 0.0000 | 14.967441 | 0.935825 | `drifted (different image)` |
+| **94103** | 0.93249 | 1.279e-01 | 0.0000 | 15.326191 | 0.933056 | `drifted (different image)` |
+| **99999** | 0.93477 | 1.236e-01 | 0.0000 | 14.651061 | 0.937222 | `drifted (different image)` |
+| **Mean** | **0.93334** | **1.268e-01** | **0.0000** | **14.911295** | **0.936180** | **25/25 drifted (100%)** |
+
+---
+
 ## 3. Performance, Speedup & VRAM Footprint Analysis
 
 ### Inference Latency Comparison (Wall Time on Seed 99999)
@@ -375,33 +549,51 @@ Deterministic per-step latent trajectory divergence and image quality benchmark 
 #### Sharp 7B Architecture
 - **Sharp FP16 Reference:** ~117.25s – 124.92s (baseline)
 - **Sharp ConvRot INT8:** 31.38s (**3.98x speedup**)
-- **Sharp ConvRot W4A8:** 11.18s (**10.49x speedup**) — Fastest overall profile
+- **Sharp ConvRot W4A8:** 11.18s (**10.49x speedup**) — Fastest overall 7B profile
 - **Sharp NVFP4:** 11.59s (**10.15x speedup**)
+
+#### 3B Architecture
+- **3B FP16 Reference:** ~11.93s – 13.10s (baseline)
+- **3B ConvRot INT8:** 9.55s (**1.25x speedup**)
+- **3B ConvRot W4A8:** 9.02s (**1.38x speedup**) — Fastest overall 3B profile
+- **3B NVFP4 (Stock Dequant):** 9.70s (**1.35x speedup**)
 
 ### GPU Memory Consumption (Peak VRAM on Seed 99999)
 
-- **FP16 Reference (Standard & Sharp):** ~16.04 – 16.07 GiB (requires 24GB VRAM class GPU for comfortable headroom)
-- **ConvRot INT8 (Standard & Sharp):** 8.53 GiB (**−46.8% memory reduction**, operates comfortably within 10–12GB VRAM cards)
-- **ConvRot W4A8 (Standard & Sharp):** 5.69 GiB (**−64.5% memory reduction**, operates comfortably on 6–8GB VRAM cards)
-- **NVFP4 (Standard & Sharp):** 5.72 GiB (**−64.4% memory reduction**, operates comfortably on 6–8GB VRAM cards)
+#### 7B Architecture (Standard & Sharp)
+- **FP16 Reference:** ~16.04 – 16.07 GiB (requires 24GB VRAM class GPU for comfortable headroom)
+- **ConvRot INT8:** 8.53 GiB (**−46.8% memory reduction**, operates comfortably within 10–12GB VRAM cards)
+- **ConvRot W4A8:** 5.69 GiB (**−64.5% memory reduction**, operates comfortably on 6–8GB VRAM cards)
+- **NVFP4:** 5.72 GiB (**−64.4% memory reduction**, operates comfortably on 6–8GB VRAM cards)
+
+#### 3B Architecture
+- **3B FP16 Reference:** ~7.17 – 7.20 GiB (operates on 8–10GB VRAM cards)
+- **3B ConvRot INT8:** 5.69 GiB (**−20.6% memory reduction**, operates comfortably on 6–8GB VRAM cards)
+- **3B ConvRot W4A8:** 5.69 GiB (**−20.6% memory reduction**, operates comfortably on 6–8GB VRAM cards)
+- **3B NVFP4:** 5.72 GiB (**−20.6% memory reduction**, operates comfortably on 6–8GB VRAM cards)
 
 ---
 
 ## 4. Key Findings and Trajectory Analysis
 
-1. **Zero Catastrophic Bifurcations Across All 6 Evaluated Configurations (0/150 = 0%):**
-   Across 150 total generation runs (25 seeds × 6 model configurations), `max-drop` remained strictly **0.0000** without a single exception. Unlike standard diffusion text-to-image models that often experience discrete attractor flips under aggressive 4-bit quantizations, the continuous video/image latent distribution in SeedVR2 produces deterministic and continuous trajectories across both standard and sharp model weights.
+1. **Zero Catastrophic Bifurcations Across All 9 Evaluated Configurations (0/225 = 0%):**
+   Across 225 total generation runs (25 seeds × 9 model configurations across Standard 7B, Sharp 7B, and 3B), `max-drop` remained strictly **0.0000** without a single exception. Unlike standard diffusion text-to-image models that often experience discrete attractor flips under aggressive 4-bit quantizations, the continuous video/image latent distribution in SeedVR2 produces deterministic and continuous trajectories across all standard, sharp, and 3B model weights.
 
-2. **ConvRot INT8 Preserves Near-Lossless Parity (Standard: 0.99892, Sharp: 0.99766):**
-   Both standard and sharp ConvRot INT8 checkpoints achieve **100% same-image verdicts (25/25 seeds)**. Standard ConvRot INT8 achieves a mean latent cosine of **0.99892** and image SSIM of **0.994682**, while the sharp variant achieves **0.99766** and image SSIM of **0.992470**. Both reduce VRAM footprint by 46.8% (8.53 GiB) and accelerate generation by 4.0x–5.0x with no human-perceptible degradation.
+2. **ConvRot INT8 Preserves Near-Lossless Parity Across All Architectures:**
+   All three ConvRot INT8 checkpoints (Standard 7B, Sharp 7B, and 3B) achieve **100% same-image verdicts (25/25 seeds)**:
+   - **Standard 7B ConvRot INT8:** mean latent cosine **0.99892**, image SSIM **0.994682**, VRAM reduction −46.8% (8.53 GiB).
+   - **Sharp 7B ConvRot INT8:** mean latent cosine **0.99766**, image SSIM **0.992470**, VRAM reduction −46.8% (8.53 GiB).
+   - **3B ConvRot INT8:** mean latent cosine **0.99724**, image SSIM **0.992455**, VRAM reduction −20.6% (5.69 GiB).
+   ConvRot INT8 establishes true near-lossless mathematical and visual parity with FP16 reference weights across the entire family.
 
-3. **ConvRot W4A8 Represents the Pinnacle of 4-Bit Efficiency:**
-   Combining INT4 packed weights with FP8 group scales, FP32 channel scales, and Hadamard orthogonal rotation (`convrot_groupsize=256`), ConvRot W4A8 delivers the best latency profile across both model types:
-   - **Standard W4A8:** 14.32s wall time (**9.04x speedup**), 5.69 GiB peak VRAM, **0.98672 mean latent cosine**, **100% same-image rate (25/25)**.
-   - **Sharp W4A8:** 11.18s wall time (**10.49x speedup**), 5.69 GiB peak VRAM, **0.97682 mean latent cosine**, tightly bounded drift with zero artifacts.
+3. **ConvRot W4A8 Delivers Top Speedup & Bounded Error:**
+   Combining INT4 packed weights with FP8 group scales, FP32 channel scales, and Hadamard orthogonal rotation (`convrot_groupsize=256`), ConvRot W4A8 delivers the best latency profile across all model architectures:
+   - **Standard 7B W4A8:** 14.32s wall time (**9.04x speedup**), 5.69 GiB peak VRAM, **0.98672 mean latent cosine**, **100% same-image rate (25/25)**.
+   - **Sharp 7B W4A8:** 11.18s wall time (**10.49x speedup**), 5.69 GiB peak VRAM, **0.97682 mean latent cosine**, tightly bounded drift with zero artifacts.
+   - **3B W4A8:** 9.02s wall time (**1.38x speedup**), 5.69 GiB peak VRAM, **0.97093 mean latent cosine**, highest throughput among all 3B models.
 
 4. **NVFP4 Operates in Bounded Drift Mode Under Stock Dequant GEMM:**
-   In stock ComfyUI without dedicated hardware W4A4 Tensor Core forward patches, NVFP4 executes on-the-fly dequantization. Across both standard (mean cosine **0.96430**) and sharp variants (mean cosine **0.94510**), trajectories experience smooth and gradual drift without sudden bifurcation steps. However, ConvRot W4A8 consistently surpasses NVFP4 in both numerical fidelity and raw execution throughput.
+   In stock ComfyUI without dedicated hardware W4A4 Tensor Core forward patches, NVFP4 executes on-the-fly dequantization. Across Standard 7B (mean cosine **0.96430**), Sharp 7B (mean cosine **0.94510**), and 3B (mean cosine **0.93334**), trajectories experience smooth and gradual drift without sudden bifurcation steps. However, ConvRot W4A8 consistently surpasses NVFP4 in both numerical fidelity and raw execution throughput across every model tier.
 
 ---
 
