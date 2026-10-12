@@ -138,7 +138,7 @@ The **`SeedVR2 Video Upscaler`** node is the core execution node that orchestrat
     - **`True`**: Adaptively appends safety margins for non-standard aspect ratios (e.g. 560×938 2x) to eliminate right-edge and bottom-right corner checkerboard noise caused by DiT runt window slivers ($< 6$ latent pixels).
 
     <p align="left">
-      <img src="https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/noise.png" width="200" alt="Checkerboard noise on custom aspect ratio (e.g. 560x938 2x)" />
+      <img src="https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/noise.png" width="100" alt="Checkerboard noise on custom aspect ratio (e.g. 560x938 2x)" />
     </p>
 
 
