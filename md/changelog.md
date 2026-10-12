@@ -7,6 +7,12 @@
 
 # Changelog
 
+## v1.6.7 — 2026-10-12
+- **Summary:** Elimination of right/bottom-edge checkerboard noise via adaptive safe padding & TensorRT VAE cross-stream synchronization:
+  - **Adaptive Safe Padding for DiT 720P Window Attention:** Resolved an issue where specific portrait/custom aspect ratios (such as 560×938 2x upscaling) generated runt window slivers (e.g. width remainder of only 2 latent pixels against the 23-pixel window size). Isolated slivers lacked spatial context, causing localized self-attention degradation and checkerboard noise along the right edge and bottom-right corner. `DivisiblePad` now adaptively evaluates DiT 720P window geometry and pads an additional 16-multiple safe margin when runt slivers (< 6 latent px) are detected, which is seamlessly cropped back to the true target dimensions after decoding with negligible VRAM overhead (~30–50MB).
+  - **TensorRT VAE Cross-Stream Synchronization:** Implemented explicit CUDA stream synchronization (`wait_stream`) between the PyTorch caller stream and the dedicated TensorRT execution stream in `trt_decoder.py` and `trt_encoder.py`. Guarantees memory ordering between pre-allocated tile buffers and asynchronous tile accumulation before final division, eliminating race conditions across tile boundaries.
+- **Technical Details:** See [v1.6.7 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.7) for complete explanation
+
 ## v1.6.6 — 2026-10-11
 - **Summary:** Full native support for ConvRot W4A8 DiT models & DisTorch2 compatibility scope:
   - **Full Support for 3B / 7B / 7B Sharp ConvRot W4A8 Models:** Complete support across model registry, automated download pipeline, and native inference for `seedvr2_3b_convrot_w4a8.safetensors`, `seedvr2_7b_convrot_w4a8.safetensors`, and `seedvr2_7b_sharp_convrot_w4a8.safetensors`. The model loader dropdown exclusively registers canonical `convrot` model names to eliminate redundant redownloads, with backwards-compatible alias resolution for legacy workflows.
