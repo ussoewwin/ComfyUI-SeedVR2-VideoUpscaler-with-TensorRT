@@ -105,6 +105,42 @@
 - **`norm_bf16`**：Phase 2 的 RMS/QK norm 精度。关闭 = 传统 fp32 路径（质量优先）。开启 = bf16 norm 路径（节省常驻 VRAM；输出与 fp32 路径不同）。
 
 节点会在控制台报告最终放置结果（`[MultiGPU DisTorch V2] ... Final Allocation String` 及逐设备的层分布表）。
+
+### SeedVR2 Video Upscaler 节点
+
+![SeedVR2 Video Upscaler Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/upscaler.png)
+
+**`SeedVR2 Video Upscaler`** 节点是统筹整个放大流水线的核心执行节点，按序串联三个处理阶段：(1) 视频帧预处理与 VAE 潜空间编码，(2) 基于 720P 局部窗口注意力的 DiT 扩散放大，以及 (3) 带有色彩校正与后处理的 VAE 潜空间解码。该节点无缝支持 TensorRT VAE 引擎与 PyTorch VAE 原生模型，以及 DisTorch2 / 标准 DiT 加载器。
+
+#### 节点参数与设置
+
+- **输入 (Inputs)**：
+  - **`image`**：作为图像批次输入的视频帧（支持 RGB 或 RGBA）。输出格式与输入一致。
+  - **`dit`**：来自标准加载器或 DisTorch2 DiT 加载器节点的 DiT 模型配置（`SEEDVR2_DIT`）。
+  - **`vae_encode`** *(可选)*：TensorRT VAE 编码器配置（`SEEDVR2_VAE`）。
+  - **`vae_decode`** *(可选)*：TensorRT VAE 解码器配置（`SEEDVR2_VAE`）。
+
+- **参数 (Parameters)**：
+  - **`seed`**：用于可复现生成的随机种子（默认：`42`）。支持标准 64 位整数范围。
+  - **`resolution`**：目标最短边分辨率（像素，默认：`1080`）。自动保持原始输入宽高比。
+  - **`max_resolution`**：任何维度的最大分辨率上限（默认：`0`，无限制）。若缩放后任意边超过该值，两个维度将等比例缩小，防止极端宽高比下显存溢出。
+  - **`batch_size`**：每批同时处理的视频帧数（默认：`5`）。必须符合 $4n+1$ 规律（`1, 5, 9, 13, 17, 21, ...`）。较大值可提升时间一致性与处理吞吐量；较小值可显著降低显存峰值。
+  - **`uniform_batch_size`**：将最后一批填充补齐至 `batch_size`（默认：`False`）。避免末尾少帧引起的时间一致性伪影。
+  - **`color_correction`**：VAE 解码后应用的色彩校正算法，以贴合原始输入色调（默认：`lab`）。可选：`lab`（感知色彩匹配，推荐）、`wavelet`、`wavelet_adaptive`、`hsv`、`adain`、`none`。
+  - **`temporal_overlap`**：连续批次间的重叠帧数（默认：`0`）。平滑批次过渡边界，消除接缝伪影（长视频推荐设为 `1–4`）。
+  - **`prepend_frames`**：在视频开头前置倒放的帧数（默认：`0`）。有助于减少视频初始位置的伪影；最终输出中会自动裁去该部分。
+  - **`input_noise_scale`**：在 VAE 编码前注入到输入图像的微小噪声比例（默认：`0.0`，范围 `0.0–1.0`）。
+  - **`latent_noise_scale`**：在扩散去噪过程中注入到潜空间的噪声比例（默认：`0.0`，范围 `0.0–1.0`）。
+  - **`offload_device`**：各处理阶段之间暂存中间张量的设备（默认：`cpu`）。可选：`cpu`（系统内存，超长视频推荐，极低显存）、`none`（全部保留在显卡上，速度最快）、`cuda:X`（第二张 GPU）。
+  - **`enable_debug`**：在终端打印详细的分阶段显存占用、执行耗时及张量维度信息（默认：`False`）。
+  - **`safe_padding`**：针对 DiT 720P 局部窗口注意力的自适应安全填充开关（默认：`False`）。
+    - **`False` (默认)**：保持纯净的 16 倍数填充。显存开销完全最小化。适合 1280×720、1920×1080 等标准规整分辨率。
+    - **`True`**：在特殊或竖屏宽高比（如 560×938 放大 2 倍）下自适应追加安全边距，彻底消除因 DiT 极小残片窗口（$< 6$ 潜像素）导致的右边缘及右下角高频棋盘格噪点。
+
+    <p align="left">
+      <img src="https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/noise.png" width="100" alt="特殊分辨率（如 560x938 2x）下的棋盘格噪点" />
+    </p>
+
 ## 文档
 
 详细说明请参阅官方仓库：
