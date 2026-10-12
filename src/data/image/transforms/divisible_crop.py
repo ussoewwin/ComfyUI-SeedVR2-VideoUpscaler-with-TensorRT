@@ -58,9 +58,38 @@ class DivisiblePad:
         else:
             raise NotImplementedError
 
-        # Calculate padding needed
+        # Calculate base padding needed for divisible factors
         pad_height = (self.height_factor - (height % self.height_factor)) % self.height_factor
         pad_width = (self.width_factor - (width % self.width_factor)) % self.width_factor
+
+        # Prevent DiT 720P window runt slivers:
+        # If the remaining latent width or height after window division (ww, wh) is tiny
+        # (e.g. 0 < rem < 6 latent px), the attention window becomes an isolated sliver with
+        # insufficient context, causing checkerboard noise at the right/bottom edge.
+        # Pad by additional multiples of 16 so the runt window has sufficient width/height.
+        import math
+        from math import ceil
+        while True:
+            cur_h = height + pad_height
+            cur_w = width + pad_width
+            lat_h, lat_w = cur_h // 8, cur_w // 8
+            if lat_h * lat_w == 0:
+                break
+            scale = math.sqrt((45 * 80) / (lat_h * lat_w))
+            resized_h, resized_w = round(lat_h * scale), round(lat_w * scale)
+            wh, ww = ceil(resized_h / 2), ceil(resized_w / 2)
+            if wh == 0 or ww == 0:
+                break
+            rem_h = lat_h % wh
+            rem_w = lat_w % ww
+            need_h = (0 < rem_h < 6)
+            need_w = (0 < rem_w < 6)
+            if not need_h and not need_w:
+                break
+            if need_w:
+                pad_width += self.width_factor
+            if need_h:
+                pad_height += self.height_factor
 
         if pad_height == 0 and pad_width == 0:
             return image
