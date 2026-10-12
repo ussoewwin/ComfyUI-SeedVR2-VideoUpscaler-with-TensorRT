@@ -44,7 +44,9 @@ from ..utils.constants import get_script_directory
 script_directory = get_script_directory()
 
 
-def prepare_video_transforms(resolution: int, max_resolution: int = 0, debug: Optional['Debug'] = None) -> Compose:
+def prepare_video_transforms(resolution: int, max_resolution: int = 0, 
+                             debug: Optional['Debug'] = None,
+                             safe_padding: bool = False) -> Compose:
     """
     Prepare optimized video transformation pipeline
     
@@ -52,6 +54,7 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0, debug: Op
         resolution (int): Target resolution for shortest edge
         max_resolution (int): Maximum resolution for any edge (0 = no limit)
         debug (Debug, optional): Debug instance for logging
+        safe_padding (bool, optional): Whether to enable adaptive DiT window runt padding
         
     Returns:
         Compose: Configured transformation pipeline
@@ -60,6 +63,7 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0, debug: Op
         - Resolution-aware upscaling (no downsampling)
         - Optional max resolution constraint on longest edge
         - Padding to divisible by 16 (no data loss)
+        - Optional adaptive safe padding to prevent edge noise
         - Proper normalization for model compatibility
         - Memory-efficient tensor operations
     """
@@ -67,6 +71,8 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0, debug: Op
         msg = f"Initializing video transformation pipeline for {resolution}px (shortest edge)"
         if max_resolution > 0:
             msg += f", max {max_resolution}px (any edge)"
+        if safe_padding:
+            msg += ", safe_padding=True"
         debug.log(msg, category="setup", indent_level=1)
     
     return Compose([
@@ -78,7 +84,7 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0, debug: Op
             max_resolution=max_resolution,
         ),
         Lambda(lambda x: torch.clamp(x, 0.0, 1.0)),
-        DivisiblePad((16, 16)),
+        DivisiblePad((16, 16), safe_padding=safe_padding),
         Normalize(0.5, 0.5),
         Lambda(lambda x: x.permute(1, 0, 2, 3)),  # t c h w -> c t h w (faster than Rearrange)
     ])
@@ -101,6 +107,8 @@ def setup_video_transform(ctx: Dict[str, Any], resolution: int, max_resolution: 
         (true_height, true_width, padded_height, padded_width) if dimensions computed,
         (0, 0, 0, 0) otherwise
     """
+    safe_padding = ctx.get('safe_padding', False)
+
     # Check if transform exists AND is not None
     existing_transform = ctx.get('video_transform')
     
@@ -119,7 +127,7 @@ def setup_video_transform(ctx: Dict[str, Any], resolution: int, max_resolution: 
         return 0, 0, 0, 0
     
     # Create transformation pipeline (first time or after cleanup)
-    ctx['video_transform'] = prepare_video_transforms(resolution, max_resolution, debug)
+    ctx['video_transform'] = prepare_video_transforms(resolution, max_resolution, debug, safe_padding=safe_padding)
     
     # Compute dimensions if sample frame provided
     if sample_frame is not None:

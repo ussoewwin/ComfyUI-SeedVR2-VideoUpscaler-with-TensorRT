@@ -225,6 +225,18 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                         "Useful for troubleshooting errors and performance issues."
                     )
                 ),
+
+                io.Boolean.Input("safe_padding",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "Enable adaptive safe padding to eliminate right/bottom edge checkerboard noise (default: False).\n"
+                        "• False: Pure 16-multiple padding (minimum VRAM, ideal for standard resolutions like 1280x720).\n"
+                        "• True: Pads extra 16-multiple margin on custom aspect ratios (e.g. 560x938 2x) to prevent\n"
+                        "  DiT 720P window runt slivers (< 6 latent px) and edge artifacts, at the cost of slight VRAM overhead (~30-50MB).\n"
+                        "Keep False unless you notice periodic edge checkerboard artifacts on non-standard aspect ratios."
+                    )
+                ),
             ],
             outputs=[
                 io.Image.Output(
@@ -239,7 +251,8 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 uniform_batch_size: bool = False, temporal_overlap: int = 0, prepend_frames: int = 0,
                 color_correction: str = "wavelet", input_noise_scale: float = 0.0,
                 latent_noise_scale: float = 0.0, offload_device: str = "none",
-                enable_debug: bool = False, vae_encode: Dict[str, Any] | None = None,
+                enable_debug: bool = False, safe_padding: bool = False,
+                vae_encode: Dict[str, Any] | None = None,
                 vae_decode: Dict[str, Any] | None = None, **kwargs) -> io.NodeOutput:
         """
         Execute SeedVR2 video upscaling with progress reporting
@@ -466,6 +479,7 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 tensor_offload_device=tensor_offload_device,
                 debug=debug
             )
+            ctx['safe_padding'] = safe_padding
 
             # Prepare runner with model state management and global cache
             runner, cache_context = prepare_runner(
