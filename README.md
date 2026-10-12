@@ -106,6 +106,38 @@ The **`SeedVR2 (Down)Load DiT Model with Distorch2`** node hosts the entire (qua
 
 The node reports its final placement in the console (`[MultiGPU DisTorch V2] ... Final Allocation String` and the per-device layer distribution table).
 
+### SeedVR2 Video Upscaler Node
+
+![SeedVR2 Video Upscaler Node](https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/upscaler.png)
+
+The **`SeedVR2 Video Upscaler`** node is the core execution node that orchestrates the entire upscaling pipeline across three sequential phases: (1) Frame pre-processing & VAE latent encoding, (2) DiT diffusion upscaling with 720P window attention, and (3) VAE latent decoding with color correction and post-processing. It seamlessly interfaces with both TensorRT VAE engines and PyTorch VAE models, as well as DisTorch2 / Standard DiT loaders.
+
+#### Node Parameters & Settings
+
+- **Inputs**:
+  - **`image`**: Input video frames as an image batch (RGB or RGBA). Output format matches input.
+  - **`dit`**: DiT model configuration (`SEEDVR2_DIT`) from either the standard or DisTorch2 DiT loader node.
+  - **`vae_encode`** *(Optional)*: TensorRT VAE encoder configuration (`SEEDVR2_VAE`).
+  - **`vae_decode`** *(Optional)*: TensorRT VAE decoder configuration (`SEEDVR2_VAE`).
+
+- **Parameters**:
+  - **`seed`**: Random seed for reproducible generation (default: `42`). Supports standard 64-bit integer range.
+  - **`resolution`**: Target resolution for the shortest edge in pixels (default: `1080`). Automatically maintains the input aspect ratio.
+  - **`max_resolution`**: Maximum resolution cap for any dimension (default: `0`, no limit). If any edge exceeds this after scaling, both dimensions are downscaled proportionally to prevent out-of-memory errors on extreme aspect ratios.
+  - **`batch_size`**: Number of frames processed together per batch (default: `5`). Must follow the $4n+1$ pattern (`1, 5, 9, 13, 17, 21, ...`). Higher values enhance temporal consistency and throughput; lower values reduce peak VRAM.
+  - **`uniform_batch_size`**: Pad the final batch to match `batch_size` (default: `False`). Prevents temporal artifacts on trailing frames.
+  - **`color_correction`**: Color grading method applied after VAE decode to match original input tones (default: `lab`). Options: `lab` (perceptual color matching, recommended), `wavelet`, `wavelet_adaptive`, `hsv`, `adain`, `none`.
+  - **`temporal_overlap`**: Overlapping frames between consecutive batches (default: `0`). Blends batch transitions to prevent temporal seam lines (values `1–4` recommended for long videos).
+  - **`prepend_frames`**: Number of reversed frames prepended to video start (default: `0`). Reduces initialization artifacts at the beginning of videos; automatically stripped from final output.
+  - **`input_noise_scale`**: Noise injected into input images prior to VAE encoding (default: `0.0`, range `0.0–1.0`).
+  - **`latent_noise_scale`**: Noise injected into latent representations during diffusion (default: `0.0`, range `0.0–1.0`).
+  - **`offload_device`**: Device for storing intermediate tensors between pipeline phases (default: `cpu`). Options: `cpu` (system RAM, minimizes VRAM for long sequences), `none` (keep on GPU, fastest), `cuda:X` (secondary GPU).
+  - **`enable_debug`**: Print detailed stage-by-stage memory usage, execution timing, and shape information to console (default: `False`).
+  - **`safe_padding`**: Adaptive safety padding switch for DiT 720P window attention (default: `False`).
+    - **`False` (Default)**: Standard 16-multiple padding. Keeps VRAM strictly minimal. Ideal for clean standard aspect ratios (e.g. 1280×720, 1920×1080).
+    - **`True`**: Adaptively appends safety margins for non-standard aspect ratios (e.g. 560×938 2x) to eliminate right-edge and bottom-right corner checkerboard noise caused by DiT runt window slivers ($< 6$ latent pixels).
+
+
 ## Documentation
 
 For details, refer to the official repository:
