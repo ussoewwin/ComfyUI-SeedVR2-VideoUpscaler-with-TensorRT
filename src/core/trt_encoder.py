@@ -171,6 +171,11 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
     weights = torch.zeros_like(result, dtype=torch.float16)
 
+    # Cross-stream ordering (see trt_decoder.py): inputs/accumulators are produced on
+    # the caller stream, the tile loop runs on the TRT side stream.
+    caller_stream = torch.cuda.current_stream()
+    stream.wait_stream(caller_stream)
+
     with _ENCODE_LOCK, torch.cuda.stream(stream):
         # Warmup run: forces TensorRT to allocate and bind internal scratchpad memory.
         # Without this, the very first execution (tile y=0, x=0) reads uninitialized
@@ -209,6 +214,10 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
                 result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += tile_output.float() * window
                 weights[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += window.to(weights.dtype)
                 del tile_input, tile_output
+
+    # Last tile's accumulation is enqueued on the side stream after its final
+    # synchronize(); make the caller stream wait before dividing (bottom-right tile).
+    caller_stream.wait_stream(stream)
 
     encoded = (result / weights.clamp_min(1e-6).to(result.dtype))[:, :16, :, :latent_h, :latent_w].to(sample.dtype)
     if _TRT_DEBUG:

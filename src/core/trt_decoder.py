@@ -179,6 +179,13 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
     weights = torch.zeros_like(result, dtype=torch.float16)
     out_tile, out_overlap = tile * 8, overlap * 8
 
+    # Cross-stream ordering: source/result/weights are produced on the caller's
+    # (default) stream, but the tile loop runs on the dedicated TRT side stream.
+    # Without wait_stream the side stream may read source / accumulate into result
+    # before the pad/zero-init kernels finish (first tiles = top-left corruption).
+    caller_stream = torch.cuda.current_stream()
+    stream.wait_stream(caller_stream)
+
     with _DECODE_LOCK, torch.cuda.stream(stream):
         # Warmup run: forces TensorRT to allocate and bind internal scratchpad memory.
         # Without this, the very first execution (tile y=0, x=0) reads uninitialized
@@ -217,6 +224,12 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
                 result[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += tile_output.float() * window
                 weights[:, :, :, oy:oy + out_tile, ox:ox + out_tile] += window.to(weights.dtype)
                 del tile_input, tile_output
+
+    # The last tile's `result +=` / `weights +=` are enqueued on the side stream
+    # AFTER its final stream.synchronize(). The division below runs on the caller
+    # stream, so it must wait, otherwise the bottom-right tile is read half-accumulated
+    # (weights ~0 -> result/1e-6 -> clamp(+-2) speckle noise in the bottom-right corner).
+    caller_stream.wait_stream(stream)
 
     decoded = (result / weights.clamp_min(1e-6).to(result.dtype)).clamp(-2.0, 2.0)[:, :, :, :out_h, :out_w].to(latent.dtype)
     if _TRT_DEBUG:
