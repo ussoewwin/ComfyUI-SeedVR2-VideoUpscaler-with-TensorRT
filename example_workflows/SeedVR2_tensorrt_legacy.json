@@ -2,7 +2,7 @@
   "id": "e2c8e6ec-9e8a-4a81-a240-7e7d2befc2bf",
   "revision": 0,
   "last_node_id": 248,
-  "last_link_id": 394,
+  "last_link_id": 395,
   "nodes": [
     {
       "id": 59,
@@ -19,7 +19,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 6,
+      "order": 5,
       "mode": 0,
       "inputs": [
         {
@@ -281,9 +281,9 @@
       },
       "widgets_values": [
         true,
-        false,
         true,
-        false,
+        true,
+        true,
         false,
         false,
         false,
@@ -291,9 +291,9 @@
       ],
       "widgets_values_named": {
         "purge_cache": true,
-        "purge_models": false,
+        "purge_models": true,
         "clear_model_patches": true,
-        "purge_seedvr2_models": false,
+        "purge_seedvr2_models": true,
         "purge_qwen3vl_models": false,
         "purge_nunchaku_models": false,
         "HSWQ": false,
@@ -631,7 +631,7 @@
         "collapsed": false,
         "pinned": true
       },
-      "order": 7,
+      "order": 6,
       "mode": 0,
       "inputs": [
         {
@@ -716,7 +716,7 @@
       ],
       "size": [
         294.390625,
-        334
+        502.3447265625
       ],
       "flags": {
         "pinned": true
@@ -789,13 +789,13 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "183052_SeedVR_00001-audio.mp4",
-            "subfolder": "20261003",
+            "filename": "210409_SeedVR_00001-audio.mp4",
+            "subfolder": "20261012",
             "type": "output",
             "format": "video/nvenc_hevc-mp4",
             "frame_rate": 24,
-            "workflow": "183052_SeedVR_00001.png",
-            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20261003\\183052_SeedVR_00001-audio.mp4"
+            "workflow": "210409_SeedVR_00001.png",
+            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20261012\\210409_SeedVR_00001-audio.mp4"
           },
           "muted": false
         }
@@ -815,13 +815,13 @@
           "hidden": false,
           "paused": false,
           "params": {
-            "filename": "183052_SeedVR_00001-audio.mp4",
-            "subfolder": "20261003",
+            "filename": "210409_SeedVR_00001-audio.mp4",
+            "subfolder": "20261012",
             "type": "output",
             "format": "video/nvenc_hevc-mp4",
             "frame_rate": 24,
-            "workflow": "183052_SeedVR_00001.png",
-            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20261003\\183052_SeedVR_00001-audio.mp4"
+            "workflow": "210409_SeedVR_00001.png",
+            "fullpath": "D:\\USERFILES\\A1111\\outputs\\ComfyUI\\20261012\\210409_SeedVR_00001-audio.mp4"
           },
           "muted": false
         }
@@ -851,7 +851,8 @@
           "name": "TORCH_COMPILE_ARGS",
           "type": "TORCH_COMPILE_ARGS",
           "links": [
-            336
+            336,
+            395
           ]
         }
       ],
@@ -897,7 +898,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 8,
+      "order": 7,
       "mode": 4,
       "inputs": [
         {
@@ -1110,7 +1111,7 @@
         }
       },
       "widgets_values": [
-        1106131678387076,
+        91258821961161,
         "randomize",
         1080,
         0,
@@ -1122,10 +1123,11 @@
         0,
         0,
         "cpu",
+        false,
         false
       ],
       "widgets_values_named": {
-        "seed": 1106131678387076,
+        "seed": 91258821961161,
         "control_after_generate": "randomize",
         "resolution": 1080,
         "max_resolution": 0,
@@ -1137,7 +1139,8 @@
         "input_noise_scale": 0,
         "latent_noise_scale": 0,
         "offload_device": "cpu",
-        "enable_debug": false
+        "enable_debug": false,
+        "safe_padding": false
       }
     },
     {
@@ -1208,7 +1211,7 @@
         }
       },
       "widgets_values": [
-        448095024400272,
+        938815272149365,
         "randomize",
         1080,
         0,
@@ -1220,10 +1223,11 @@
         0,
         0,
         "cpu",
+        false,
         false
       ],
       "widgets_values_named": {
-        "seed": 448095024400272,
+        "seed": 938815272149365,
         "control_after_generate": "randomize",
         "resolution": 1080,
         "max_resolution": 0,
@@ -1235,7 +1239,8 @@
         "input_noise_scale": 0,
         "latent_noise_scale": 0,
         "offload_device": "cpu",
-        "enable_debug": false
+        "enable_debug": false,
+        "safe_padding": false
       }
     },
     {
@@ -1451,8 +1456,8 @@
       "id": 248,
       "type": "SeedVR2LoadDiTModel",
       "pos": [
-        -1338.5130636271156,
-        -767.8992338197387
+        -1329.3968648248706,
+        -767.6538459048136
       ],
       "size": [
         316.9,
@@ -1461,14 +1466,14 @@
       "flags": {
         "pinned": true
       },
-      "order": 5,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
           "name": "torch_compile_args",
           "shape": 7,
           "type": "TORCH_COMPILE_ARGS",
-          "link": null
+          "link": 395
         }
       ],
       "outputs": [
@@ -1497,7 +1502,7 @@
         "cpu",
         false,
         true,
-        "spargeattn",
+        "sageattn_2",
         "0.5",
         false
       ],
@@ -1509,7 +1514,7 @@
         "offload_device": "cpu",
         "cache_model": false,
         "eject_models": true,
-        "attention_mode": "spargeattn",
+        "attention_mode": "sageattn_2",
         "sparge_topk": "0.5",
         "norm_bf16": false
       }
@@ -1739,6 +1744,14 @@
       229,
       1,
       "SEEDVR2_DIT"
+    ],
+    [
+      395,
+      199,
+      0,
+      248,
+      0,
+      "TORCH_COMPILE_ARGS"
     ]
   ],
   "groups": [
@@ -1816,10 +1829,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.32349184307610995,
+      "scale": 0.43056764313430285,
       "offset": [
-        2984.797725080852,
-        1399.884211903619
+        2817.9041613167506,
+        1403.5779830112403
       ]
     },
     "ue_links": [],

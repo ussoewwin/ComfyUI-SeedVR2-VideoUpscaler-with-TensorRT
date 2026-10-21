@@ -13,9 +13,73 @@
 # // limitations under the License.
 
 from typing import Union
+import functools
+import math
 import torch
 from PIL import Image
 from torchvision.transforms import functional as TVF
+
+from ....models.dit_7b.window import (
+    make_720Pwindows_bysize,
+    make_shifted_720Pwindows_bysize,
+)
+
+# DiT token grid geometry (configs_*/main.yaml): VAE spatial stride 8 x patch_size 2,
+# window = (4, 3, 3) for every layer, alternating regular / shifted 720p windows.
+_TOKEN_STRIDE = 16
+_DIT_NUM_WINDOWS = (4, 3, 3)
+# Minimum allowed window extent, relative to the nominal window size of that axis
+# (about one third of a window). Regular tail r and shifted tail (r - ws/2) mod ws can
+# both satisfy this bound, so a valid padding always exists within one window period.
+_MIN_WINDOW_RATIO = 0.34
+# Search range for extra padding (in pad-factor steps) per axis.
+_MAX_SEARCH_STEPS = 16
+
+
+def _window_deficit(height: int, width: int) -> int:
+    """
+    Return how many tokens the smallest DiT attention window falls short of the
+    minimum allowed extent (0 = every regular and shifted window is healthy).
+    """
+    th, tw = height // _TOKEN_STRIDE, width // _TOKEN_STRIDE
+    if th <= 0 or tw <= 0:
+        return 0
+    _, nh, nw = _DIT_NUM_WINDOWS
+    scale = math.sqrt((45 * 80) / (th * tw))
+    wh = math.ceil(round(th * scale) / nh)
+    ww = math.ceil(round(tw * scale) / nw)
+    # A window larger than the whole axis means the axis is not split at all.
+    min_h = math.ceil(_MIN_WINDOW_RATIO * wh) if wh < th else 0
+    min_w = math.ceil(_MIN_WINDOW_RATIO * ww) if ww < tw else 0
+
+    deficit = 0
+    for window_op in (make_720Pwindows_bysize, make_shifted_720Pwindows_bysize):
+        slices = window_op((1, th, tw), _DIT_NUM_WINDOWS)
+        for _, sh, sw in slices:
+            deficit = max(deficit, min_h - (sh.stop - sh.start), min_w - (sw.stop - sw.start))
+    return deficit
+
+
+@functools.lru_cache(maxsize=256)
+def _find_safe_window_padding(height: int, width: int, factor_h: int, factor_w: int):
+    """
+    Find the smallest extra (pad_h, pad_w), in multiples of the pad factors, such that
+    no regular or shifted DiT window collapses into a runt sliver. Height and width are
+    searched jointly because the window size depends on the total token area.
+    """
+    if _window_deficit(height, width) == 0:
+        return 0, 0
+
+    best = None  # (deficit, added_area, extra_h, extra_w)
+    for sh in range(_MAX_SEARCH_STEPS + 1):
+        for sw in range(_MAX_SEARCH_STEPS + 1):
+            eh, ew = sh * factor_h, sw * factor_w
+            deficit = _window_deficit(height + eh, width + ew)
+            added = (height + eh) * (width + ew) - height * width
+            key = (deficit, added, eh, ew)
+            if best is None or key < best:
+                best = key
+    return best[2], best[3]
 
 
 class DivisibleCrop:
@@ -64,34 +128,22 @@ class DivisiblePad:
         pad_width = (self.width_factor - (width % self.width_factor)) % self.width_factor
 
         # Prevent DiT 720P window runt slivers (optional, enabled via safe_padding=True):
-        # If the remaining latent width or height after window division (ww, wh) is tiny
-        # (e.g. 0 < rem < 6 latent px), the attention window becomes an isolated sliver with
-        # insufficient context, causing checkerboard noise at the right/bottom edge.
-        # Pad by additional multiples of 16 so the runt window has sufficient width/height.
+        # The DiT attends inside local windows over the patchified token grid
+        # (pixel / 16: VAE stride 8 x patch 2). Layers alternate between regular
+        # (720pwin_by_size_bysize) and half-shifted (720pswin_by_size_bysize) windows.
+        # When the token height/width is not a good fit for the window size, the last
+        # regular or shifted window collapses to a sliver of only a few tokens, which
+        # produces checkerboard noise along the right edge / bottom edge / bottom-right
+        # corner. The exact window layout of both window types is simulated and the
+        # smallest extra padding (in multiples of the pad factor) that keeps every
+        # window at least _MIN_WINDOW_RATIO of the nominal window size is selected.
         if self.safe_padding:
-            import math
-            from math import ceil
-            while True:
-                cur_h = height + pad_height
-                cur_w = width + pad_width
-                lat_h, lat_w = cur_h // 8, cur_w // 8
-                if lat_h * lat_w == 0:
-                    break
-                scale = math.sqrt((45 * 80) / (lat_h * lat_w))
-                resized_h, resized_w = round(lat_h * scale), round(lat_w * scale)
-                wh, ww = ceil(resized_h / 2), ceil(resized_w / 2)
-                if wh == 0 or ww == 0:
-                    break
-                rem_h = lat_h % wh
-                rem_w = lat_w % ww
-                need_h = (0 < rem_h < 6)
-                need_w = (0 < rem_w < 6)
-                if not need_h and not need_w:
-                    break
-                if need_w:
-                    pad_width += self.width_factor
-                if need_h:
-                    pad_height += self.height_factor
+            extra_h, extra_w = _find_safe_window_padding(
+                height + pad_height, width + pad_width,
+                self.height_factor, self.width_factor,
+            )
+            pad_height += extra_h
+            pad_width += extra_w
 
         if pad_height == 0 and pad_width == 0:
             return image
