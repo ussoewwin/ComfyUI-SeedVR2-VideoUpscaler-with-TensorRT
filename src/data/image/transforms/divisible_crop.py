@@ -28,27 +28,58 @@ from ....models.dit_7b.window import (
 # window = (4, 3, 3) for every layer, alternating regular / shifted 720p windows.
 _TOKEN_STRIDE = 16
 _DIT_NUM_WINDOWS = (4, 3, 3)
-# Minimum allowed window extent, relative to the nominal window size of that axis
-# (about one third of a window). Regular tail r and shifted tail (r - ws/2) mod ws can
-# both satisfy this bound, so a valid padding always exists within one window period.
-_MIN_WINDOW_RATIO = 0.34
-# Search range for extra padding (in pad-factor steps) per axis.
-_MAX_SEARCH_STEPS = 16
+# Minimum healthy window extent, relative to the nominal window size. A window below
+# this fraction is a degenerate "runt" sliver (too little context for stable
+# softmax/RoPE attention), which surfaces as right/bottom edge smear or checkerboard
+# noise after decode. Measured boundaries: healthy standard resolutions sit at
+# 1280x720 -> 13/27 = 0.48, 3840x2160 -> 11/27 = 0.41, 2560x1440 -> 12/27 = 0.44;
+# the degenerate case (2944x4320) is 6/17 = 0.353. 0.36 lies just above that
+# degenerate ratio, so it flags the runt that produces right-edge smear while leaving
+# 1280x720 / 1080p / 1440p / 4K / 4K-portrait untouched. (The previous 0.34 was
+# itself <= 6/17, so the 6-token shifted edge window passed as "healthy" and the
+# smear on 2944x4320 was left unfixed.)
+_MIN_WINDOW_RATIO = 0.36
+# Hard ceiling for the extra safe padding, per axis, in pad-factor steps
+# (1 step = one pad factor = 16 px). The search range is raised to the current window
+# period (see _find_safe_window_padding), so a healthy padding always exists within
+# one period; this ceiling only bounds pathological aspect ratios, where a
+# disproportionate pad would be worse than leaving a thin edge window.
+_MAX_SAFE_PADDING_TOKENS = 64
 
 
-def _window_deficit(height: int, width: int) -> int:
+def _window_grid(height: int, width: int):
     """
-    Return how many tokens the smallest DiT attention window falls short of the
-    minimum allowed extent (0 = every regular and shifted window is healthy).
+    Reproduce the exact token-grid geometry used by both DiT window generators.
+
+    Returns (th, tw, wh, ww): th/tw = token count per axis, wh/ww = nominal
+    (unclipped) window extent in tokens. ``make_720Pwindows_bysize`` and
+    ``make_shifted_720Pwindows_bysize`` derive wh/ww identically and differ only in
+    window placement, so this single helper keeps both paths in sync.
     """
     th, tw = height // _TOKEN_STRIDE, width // _TOKEN_STRIDE
     if th <= 0 or tw <= 0:
-        return 0
+        return 0, 0, 0, 0
     _, nh, nw = _DIT_NUM_WINDOWS
     scale = math.sqrt((45 * 80) / (th * tw))
     wh = math.ceil(round(th * scale) / nh)
     ww = math.ceil(round(tw * scale) / nw)
-    # A window larger than the whole axis means the axis is not split at all.
+    return th, tw, wh, ww
+
+
+def _window_deficit(height: int, width: int) -> int:
+    """
+    Return how many tokens the smallest DiT attention window falls short of a
+    healthy minimum (0 = every regular and shifted window is healthy).
+
+    Both regular and shifted window layouts are simulated on the exact token grid
+    (pixel / 16: VAE stride 8 x patch 2) using the same generators as the DiT, and
+    the smallest regular or shifted window on either axis is compared against
+    ceil(_MIN_WINDOW_RATIO * window_size). A window larger than the whole axis means
+    the axis is not split at all, so it imposes no constraint.
+    """
+    th, tw, wh, ww = _window_grid(height, width)
+    if th <= 0 or tw <= 0:
+        return 0
     min_h = math.ceil(_MIN_WINDOW_RATIO * wh) if wh < th else 0
     min_w = math.ceil(_MIN_WINDOW_RATIO * ww) if ww < tw else 0
 
@@ -63,16 +94,27 @@ def _window_deficit(height: int, width: int) -> int:
 @functools.lru_cache(maxsize=256)
 def _find_safe_window_padding(height: int, width: int, factor_h: int, factor_w: int):
     """
-    Find the smallest extra (pad_h, pad_w), in multiples of the pad factors, such that
-    no regular or shifted DiT window collapses into a runt sliver. Height and width are
-    searched jointly because the window size depends on the total token area.
+    Find the smallest extra (pad_h, pad_w), in multiples of the pad factors, such
+    that no regular or shifted DiT window collapses into a runt sliver.
+
+    The per-axis search cap is raised to the current window period (wh / ww in
+    pad-factor steps): shifting an axis by a full period restores the same window
+    phase, so a healthy padding always exists within one period. It is clamped down
+    to _MAX_SAFE_PADDING_TOKENS (so extreme aspect ratios never receive a
+    disproportionate pad) and up to at least 2 steps. Height and width are searched
+    jointly because the window size depends on the total token area, not on one axis
+    alone.
     """
     if _window_deficit(height, width) == 0:
         return 0, 0
 
+    _, _, wh, ww = _window_grid(height, width)
+    cap_h = max(2, min(_MAX_SAFE_PADDING_TOKENS, wh if wh else 2))
+    cap_w = max(2, min(_MAX_SAFE_PADDING_TOKENS, ww if ww else 2))
+
     best = None  # (deficit, added_area, extra_h, extra_w)
-    for sh in range(_MAX_SEARCH_STEPS + 1):
-        for sw in range(_MAX_SEARCH_STEPS + 1):
+    for sh in range(cap_h + 1):
+        for sw in range(cap_w + 1):
             eh, ew = sh * factor_h, sw * factor_w
             deficit = _window_deficit(height + eh, width + ew)
             added = (height + eh) * (width + ew) - height * width
@@ -132,12 +174,12 @@ class DivisiblePad:
         # The DiT attends inside local windows over the patchified token grid
         # (pixel / 16: VAE stride 8 x patch 2). Layers alternate between regular
         # (720pwin_by_size_bysize) and half-shifted (720pswin_by_size_bysize) windows.
-        # When the token height/width is not a good fit for the window size, the last
-        # regular or shifted window collapses to a sliver of only a few tokens, which
-        # produces checkerboard noise along the right edge / bottom edge / bottom-right
-        # corner. The exact window layout of both window types is simulated and the
-        # smallest extra padding (in multiples of the pad factor) that keeps every
-        # window at least _MIN_WINDOW_RATIO of the nominal window size is selected.
+        # When a token dimension fits the window size badly, the last regular or
+        # shifted window collapses to a sliver below _MIN_WINDOW_RATIO of the nominal
+        # window size, which produces smear / checkerboard noise along the right edge,
+        # bottom edge or bottom-right corner. The exact layout of both window types is
+        # simulated and the smallest extra padding (in multiples of the pad factor)
+        # that keeps every window healthy is selected.
         if self.safe_padding:
             extra_h, extra_w = _find_safe_window_padding(
                 height + pad_height, width + pad_width,
@@ -150,7 +192,7 @@ class DivisiblePad:
             return image
 
         # Pad right/bottom using edge reflection (fallback to edge replication if pad >= dim)
-        # Never pad with constant 0.0 (black): a 64px–160px black band at the right/bottom
+        # Never pad with constant 0.0 (black): a 64px-160px black band at the right/bottom
         # edge falls inside the rightmost/bottommost DiT 720P attention window and corrupts
         # attention keys/values and VAE convolutions along the entire right/bottom border!
         if isinstance(image, torch.Tensor):
