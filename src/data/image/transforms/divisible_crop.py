@@ -107,7 +107,8 @@ class DivisibleCrop:
 class DivisiblePad:
     """
     Pad image to make dimensions divisible by a factor.
-    Pads with black (0) to avoid data loss.
+    Uses edge reflection (or edge replication fallback) to avoid black-border
+    bleeding and high-contrast artifacts during VAE encoding and DiT window attention.
     """
     def __init__(self, factor, safe_padding: bool = False):
         if not isinstance(factor, tuple):
@@ -148,16 +149,31 @@ class DivisiblePad:
         if pad_height == 0 and pad_width == 0:
             return image
 
-        # Pad symmetrically (or bottom/right)
+        # Pad right/bottom using edge reflection (fallback to edge replication if pad >= dim)
+        # Never pad with constant 0.0 (black): a 64px–160px black band at the right/bottom
+        # edge falls inside the rightmost/bottommost DiT 720P attention window and corrupts
+        # attention keys/values and VAE convolutions along the entire right/bottom border!
         if isinstance(image, torch.Tensor):
             # Pad format: (left, right, top, bottom)
             padding = (0, pad_width, 0, pad_height)
-            image = torch.nn.functional.pad(image, padding, mode='constant', value=0.0)
+            pad_mode = 'reflect' if (pad_width < width and pad_height < height) else 'replicate'
+            if image.ndim == 2:
+                image = torch.nn.functional.pad(
+                    image.unsqueeze(0).unsqueeze(0), padding, mode=pad_mode
+                ).squeeze(0).squeeze(0)
+            else:
+                image = torch.nn.functional.pad(image, padding, mode=pad_mode)
         elif isinstance(image, Image.Image):
             new_width = width + pad_width
             new_height = height + pad_height
             result = Image.new(image.mode, (new_width, new_height), (0, 0, 0))
             result.paste(image, (0, 0))
+            if pad_width > 0:
+                right_col = image.crop((width - 1, 0, width, height)).resize((pad_width, height))
+                result.paste(right_col, (width, 0))
+            if pad_height > 0:
+                bottom_row = result.crop((0, height - 1, new_width, height)).resize((new_width, pad_height))
+                result.paste(bottom_row, (0, height))
             image = result
 
         return image
