@@ -69,25 +69,32 @@ def _window_grid(height: int, width: int):
 def _window_deficit(height: int, width: int) -> int:
     """
     Return how many tokens the smallest DiT attention window falls short of a
-    healthy minimum (0 = every regular and shifted window is healthy).
+    healthy half-window minimum ``ws // 2`` (0 = every regular and shifted window
+    is at least ``ws // 2`` without needing tail-slice merging).
 
-    Both regular and shifted window layouts are simulated on the exact token grid
-    (pixel / 16: VAE stride 8 x patch 2) using the same generators as the DiT, and
-    the smallest regular or shifted window on either axis is compared against
-    ceil(_MIN_WINDOW_RATIO * window_size). A window larger than the whole axis means
-    the axis is not split at all, so it imposes no constraint.
+    Both regular and shifted unmerged window layouts are checked on the exact token
+    grid (pixel / 16: VAE stride 8 x patch 2). Because ``make_720Pwindows_bysize``
+    and ``make_shifted_720Pwindows_bysize`` also merge any runt tail slice ``< ws // 2``
+    into the preceding window at runtime, safe_padding=False is already protected
+    against runt slivers; when safe_padding=True is enabled, this pads dimensions so
+    every window natively satisfies ``>= ws // 2`` (i.e. ``rem in {0, ws // 2, ceil(ws / 2)}``).
     """
     th, tw, wh, ww = _window_grid(height, width)
     if th <= 0 or tw <= 0:
         return 0
-    min_h = math.ceil(_MIN_WINDOW_RATIO * wh) if wh < th else 0
-    min_w = math.ceil(_MIN_WINDOW_RATIO * ww) if ww < tw else 0
 
     deficit = 0
-    for window_op in (make_720Pwindows_bysize, make_shifted_720Pwindows_bysize):
-        slices = window_op((1, th, tw), _DIT_NUM_WINDOWS)
-        for _, sh, sw in slices:
-            deficit = max(deficit, min_h - (sh.stop - sh.start), min_w - (sw.stop - sw.start))
+    for t, ws in ((th, wh), (tw, ww)):
+        if ws <= 0 or ws >= t:
+            continue
+        half = ws // 2
+        rem = t % ws
+        # Regular last window size (before merge)
+        reg_last = rem if rem > 0 else ws
+        # Shifted last window size (before merge): shifted starts at half = int(0.5 * ws)
+        shf_rem = (t - half) % ws
+        shf_last = shf_rem if shf_rem > 0 else ws
+        deficit = max(deficit, half - reg_last, half - shf_last)
     return deficit
 
 

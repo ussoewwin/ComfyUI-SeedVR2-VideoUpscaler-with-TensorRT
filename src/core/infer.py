@@ -55,7 +55,9 @@ def _trt_encode_batch(enc_sample, vae, dit_model, engine_frames_setting, engine_
     ph = ((h + 7) // 8) * 8
     pw = ((w + 7) // 8) * 8
     if (ph, pw) != (h, w):
-        enc_sample = torch.nn.functional.pad(enc_sample, (0, pw - w, 0, ph - h))
+        pad_w, pad_h = pw - w, ph - h
+        pad_mode = "reflect" if (pad_w < w and pad_h < h) else "replicate"
+        enc_sample = torch.nn.functional.pad(enc_sample, (0, pad_w, 0, pad_h), mode=pad_mode)
         _TRT_CROP_HW[0], _TRT_CROP_HW[1] = h, w
     else:
         _TRT_CROP_HW[0], _TRT_CROP_HW[1] = -1, -1

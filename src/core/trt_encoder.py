@@ -160,7 +160,10 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     tile, overlap = tile_px, 96  # 96px fixed tile-to-tile overlap (12 latent px), Studio reference value
     ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
     padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
-    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
+    pad_w, pad_h = padded_w - width, padded_h - height
+    if pad_w > 0 or pad_h > 0:
+        pad_mode = "reflect" if (pad_w < width and pad_h < height) else "replicate"
+        source = torch.nn.functional.pad(source, (0, pad_w, 0, pad_h), mode=pad_mode)
     latent_frames = (frames - 1) // 4 + 1
     latent_h, latent_w = height // 8, width // 8
     raw_h, raw_w = padded_h // 8, padded_w // 8
