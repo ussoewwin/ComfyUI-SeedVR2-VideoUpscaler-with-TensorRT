@@ -232,9 +232,8 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                     tooltip=(
                         "Enable adaptive safe padding to eliminate right/bottom edge checkerboard noise (default: False).\n"
                         "• False: Pure 16-multiple padding (minimum VRAM, ideal for standard resolutions like 1280x720).\n"
-                        "• True: Simulates the regular and shifted DiT 720P attention windows and pads the smallest\n"
-                        "  extra 16-multiple margin so no window collapses into a runt sliver (< ~1/3 window) at the\n"
-                        "  right/bottom edge. Padding is cropped off after decoding; VRAM cost depends on resolution.\n"
+                        "• True: Pads extra 16-multiple margin on custom aspect ratios (e.g. 560x938 2x) to prevent\n"
+                        "  DiT 720P window runt slivers (< 6 latent px) and edge artifacts, at the cost of slight VRAM overhead (~30-50MB).\n"
                         "Keep False unless you notice periodic edge checkerboard artifacts on non-standard aspect ratios."
                     )
                 ),

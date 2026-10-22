@@ -60,15 +60,6 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0,
         
     Returns:
         Compose: Configured transformation pipeline
-        
-    Features:
-        - Resolution-aware upscaling (no downsampling)
-        - Optional max resolution constraint on longest edge
-        - Padding to divisible by 16 (no data loss)
-        - Optional adaptive safe padding to prevent edge noise
-        - Optional divisible crop (16/32/64) to eliminate padding edge artifacts
-        - Proper normalization for model compatibility
-        - Memory-efficient tensor operations
     """
     if debug:
         msg = f"Initializing video transformation pipeline for {resolution}px (shortest edge)"

@@ -135,7 +135,7 @@ The **`SeedVR2 Video Upscaler`** node is the core execution node that orchestrat
   - **`enable_debug`**: Print detailed stage-by-stage memory usage, execution timing, and shape information to console (default: `False`).
   - **`safe_padding`**: Adaptive safety padding switch for DiT 720P window attention (default: `False`).
     - **`False` (Default)**: Standard 16-multiple padding. Keeps VRAM strictly minimal. Ideal for clean standard aspect ratios (e.g. 1280×720, 1920×1080).
-    - **`True`**: Simulates the exact layout of both the regular and the half-shifted DiT 720P attention windows on the token grid (pixel / 16) and appends the smallest extra 16-multiple padding so that no window at the right edge, bottom edge, or bottom-right corner collapses into a runt sliver (smaller than about 1/3 of the window size). This eliminates the checkerboard noise on non-standard and very large resolutions (e.g. 560×938 2x, 4320px height). The padding is cropped off after VAE decoding.
+    - **`True`**: Adaptively appends safety margins for non-standard aspect ratios (e.g. 560×938 2x) to eliminate right-edge and bottom-right corner checkerboard noise caused by DiT runt window slivers ($< 6$ latent pixels).
 
     <p align="left">
       <img src="https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/noise.png" width="100" alt="Checkerboard noise on custom aspect ratio (e.g. 560x938 2x)" />

@@ -127,16 +127,14 @@ def _positions(length: int, tile: int, overlap: int) -> list[int]:
 
 
 def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.device) -> torch.Tensor:
-    """Smooth cosine cross-fade overlapping latent tiles to eliminate seam lines."""
+    """Cross-fade overlapping latent tiles instead of introducing hard averaging edges."""
     weight = torch.ones(length, device=device, dtype=torch.float32)
-    if (left or right) and overlap > 0:
-        t = torch.linspace(0.0, 1.0, overlap + 1, device=device, dtype=torch.float32)[1:]
-        # Hann / Cosine taper: 0.5 * (1 - cos(pi * t)) has zero derivative at boundaries
-        smooth = 0.5 * (1.0 - torch.cos(torch.pi * t))
-        if left:
-            weight[:overlap] = smooth
-        if right:
-            weight[-overlap:] = torch.minimum(weight[-overlap:], smooth.flip(0))
+    if left and overlap:
+        weight[:overlap] = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
+    if right and overlap:
+        weight[-overlap:] = torch.minimum(
+            weight[-overlap:], torch.linspace(1.0, 0.0, overlap + 1, device=device)[1:]
+        )
     return weight
 
 
