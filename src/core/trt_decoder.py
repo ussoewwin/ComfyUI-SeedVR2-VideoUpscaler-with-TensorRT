@@ -128,7 +128,14 @@ def _engine(latent_frames: int, vae: torch.nn.Module | None = None, dit_model: s
 
 
 def _positions(length: int, tile: int, overlap: int) -> list[int]:
-    """Even tile starts so EVERY internal boundary shares the same overlap."""
+    """Even tile starts so EVERY internal boundary shares the same overlap.
+
+    The old implementation used range(0, length-tile+1, stride) and then snapped the
+    last start to length-tile, which gave the final tile a *different* stride
+    (512px tile / overlap 24 -> last stride 28 latent instead of 40). Its blend ramp was
+    then not complementary with the previous tile, the accumulated weight spiked above
+    1.0 and produced a bright vertical seam at exactly that boundary.
+    """
     if length <= tile:
         return [0]
     stride = tile - overlap
@@ -137,27 +144,32 @@ def _positions(length: int, tile: int, overlap: int) -> list[int]:
 
 
 def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.device) -> torch.Tensor:
-    """Complementary cosine (Hann) cross-fade for a tile edge."""
+    """Complementary cosine (Hann) cross-fade for a tile edge.
+
+    A linear ramp leaves a visible residual line in flat areas because its slope is
+    discontinuous at both ends of the overlap; a cosine ramp has zero slope at the tile
+    edge. The falling side is built as 1 - rising so that, for the same overlap, the two
+    neighbours' ramps sum to exactly 1.0.
+    """
     weight = torch.ones(length, device=device, dtype=torch.float32)
     if left and overlap:
         t = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
         weight[:overlap] = 0.5 * (1.0 - torch.cos(torch.pi * t))
     if right and overlap:
         t = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
-        weight[-overlap:] = 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t))
+        weight[-overlap:] = torch.minimum(weight[-overlap:], 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t)))
     return weight
 
 
 def _feather_edges(length: int, left_ov: int, right_ov: int, device: torch.device) -> torch.Tensor:
-    """Complementary cosine taper with an explicit overlap for each side.
-    The rising ramp (left) and falling ramp (right) of overlapping tiles sum to exactly 1.0."""
+    """Complementary cosine taper with an explicit overlap for each side."""
     weight = torch.ones(length, device=device, dtype=torch.float32)
     if left_ov > 0:
         t = torch.linspace(0.0, 1.0, left_ov + 1, device=device)[1:]
         weight[:left_ov] = 0.5 * (1.0 - torch.cos(torch.pi * t))
     if right_ov > 0:
         t = torch.linspace(0.0, 1.0, right_ov + 1, device=device)[1:]
-        weight[-right_ov:] = 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t))
+        weight[-right_ov:] = torch.minimum(weight[-right_ov:], 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t)))
     return weight
 
 
@@ -196,7 +208,7 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
     # Measured: PSNR 84-85dB, stable across 15+ repeats at 512px/1024px.
     result = torch.zeros((1, 3, video_frames, raw_out_h, raw_out_w), device="cuda", dtype=torch.float32)
     weights = torch.zeros_like(result, dtype=torch.float16)
-    out_tile = tile * 8
+    out_tile, out_overlap = tile * 8, overlap * 8
 
     # Cross-stream ordering: source/result/weights are produced on the caller's
     # (default) stream, but the tile loop runs on the dedicated TRT side stream.
@@ -237,14 +249,14 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
                                 f"min={float(_dbg_tv.min()):.4f} max={float(_dbg_tv.max()):.4f} "
                                 f"std={_dbg_sd:.5f}" + ("  <<< BLACK?" if _dbg_sd < 0.05 else ""))
                 oy, ox = y * 8, x * 8
-                # Use the ACTUAL overlap with each neighbour:
-                # Overlap between tile i-1 (starts at ys[yi-1]) and tile i (starts at y)
-                # is (ys[yi-1] + tile) - y = tile - (y - ys[yi-1]) in latent space.
+                # Use the ACTUAL overlap with each neighbour (see _positions): with even
+                # tile starts the last stride can differ, and a nominal-overlap ramp
+                # would then leave a non-complementary (bright) band at that boundary.
                 yi, xi = ys_index[y], xs_index[x]
-                ov_l_y = (tile - (y - ys[yi - 1])) * 8 if yi > 0 else 0
-                ov_r_y = (tile - (ys[yi + 1] - y)) * 8 if yi < len(ys) - 1 else 0
-                ov_l_x = (tile - (x - xs[xi - 1])) * 8 if xi > 0 else 0
-                ov_r_x = (tile - (xs[xi + 1] - x)) * 8 if xi < len(xs) - 1 else 0
+                ov_l_y = (y - ys[yi - 1]) * 8 if yi > 0 else 0
+                ov_r_y = (ys[yi + 1] - y) * 8 if yi < len(ys) - 1 else 0
+                ov_l_x = (x - xs[xi - 1]) * 8 if xi > 0 else 0
+                ov_r_x = (xs[xi + 1] - x) * 8 if xi < len(xs) - 1 else 0
                 wy = _feather_edges(out_tile, ov_l_y, ov_r_y, tile_output.device)
                 wx = _feather_edges(out_tile, ov_l_x, ov_r_x, tile_output.device)
                 window = (wy[:, None] * wx[None, :]).view(1, 1, 1, out_tile, out_tile)
