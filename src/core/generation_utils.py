@@ -34,7 +34,7 @@ from torchvision.transforms import Compose, Lambda, Normalize
 
 from .model_configuration import configure_runner
 from .infer import VideoDiffusionInfer
-from ..data.image.transforms.divisible_crop import DivisiblePad
+from ..data.image.transforms.divisible_crop import DivisiblePad, DivisibleCrop
 from ..data.image.transforms.na_resize import NaResize
 from ..optimization.compatibility import COMPUTE_DTYPE, BFLOAT16_SUPPORTED
 from ..optimization.memory_manager import manage_tensor
@@ -46,7 +46,8 @@ script_directory = get_script_directory()
 
 def prepare_video_transforms(resolution: int, max_resolution: int = 0, 
                              debug: Optional['Debug'] = None,
-                             safe_padding: bool = False) -> Compose:
+                             safe_padding: bool = False,
+                             alignment_mode: str = "pad (lossless)") -> Compose:
     """
     Prepare optimized video transformation pipeline
     
@@ -55,6 +56,7 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0,
         max_resolution (int): Maximum resolution for any edge (0 = no limit)
         debug (Debug, optional): Debug instance for logging
         safe_padding (bool, optional): Whether to enable adaptive DiT window runt padding
+        alignment_mode (str, optional): 'pad (lossless)', 'crop_16', 'crop_32', or 'crop_64'
         
     Returns:
         Compose: Configured transformation pipeline
@@ -64,6 +66,7 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0,
         - Optional max resolution constraint on longest edge
         - Padding to divisible by 16 (no data loss)
         - Optional adaptive safe padding to prevent edge noise
+        - Optional divisible crop (16/32/64) to eliminate padding edge artifacts
         - Proper normalization for model compatibility
         - Memory-efficient tensor operations
     """
@@ -73,7 +76,18 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0,
             msg += f", max {max_resolution}px (any edge)"
         if safe_padding:
             msg += ", safe_padding=True"
+        if alignment_mode != "pad (lossless)":
+            msg += f", alignment_mode={alignment_mode}"
         debug.log(msg, category="setup", indent_level=1)
+
+    if alignment_mode.startswith("crop"):
+        try:
+            crop_factor = int(alignment_mode.split("_")[1])
+        except (IndexError, ValueError):
+            crop_factor = 16
+        divisible_transform = DivisibleCrop((crop_factor, crop_factor))
+    else:
+        divisible_transform = DivisiblePad((16, 16), safe_padding=safe_padding)
     
     return Compose([
         NaResize(
@@ -84,7 +98,7 @@ def prepare_video_transforms(resolution: int, max_resolution: int = 0,
             max_resolution=max_resolution,
         ),
         Lambda(lambda x: torch.clamp(x, 0.0, 1.0)),
-        DivisiblePad((16, 16), safe_padding=safe_padding),
+        divisible_transform,
         Normalize(0.5, 0.5),
         Lambda(lambda x: x.permute(1, 0, 2, 3)),  # t c h w -> c t h w (faster than Rearrange)
     ])
@@ -108,6 +122,7 @@ def setup_video_transform(ctx: Dict[str, Any], resolution: int, max_resolution: 
         (0, 0, 0, 0) otherwise
     """
     safe_padding = ctx.get('safe_padding', False)
+    alignment_mode = ctx.get('alignment_mode', 'pad (lossless)')
 
     # Check if transform exists AND is not None
     existing_transform = ctx.get('video_transform')
@@ -127,24 +142,37 @@ def setup_video_transform(ctx: Dict[str, Any], resolution: int, max_resolution: 
         return 0, 0, 0, 0
     
     # Create transformation pipeline (first time or after cleanup)
-    ctx['video_transform'] = prepare_video_transforms(resolution, max_resolution, debug, safe_padding=safe_padding)
+    ctx['video_transform'] = prepare_video_transforms(resolution, max_resolution, debug, safe_padding=safe_padding, alignment_mode=alignment_mode)
     
     # Compute dimensions if sample frame provided
     if sample_frame is not None:
-        # Get true target size (after resize, before padding)
-        temp_transform = Compose([
-            NaResize(resolution=resolution, mode="side", downsample_only=False, max_resolution=max_resolution),
-            Lambda(lambda x: torch.clamp(x, 0.0, 1.0))
-        ])
-        resized_sample = temp_transform(sample_frame)
-        true_h, true_w = resized_sample.shape[-2:]
-        
-        # Round to multiples of 8: required by the VAE (stride-8 convs -> latent is 1/8
-        # spatial) and by the TensorRT tile path (tile boundaries must align with
-        # latent boundaries, otherwise smeared/black tiles appear). Multiples of 8
-        # are also even, so libx264 compatibility is preserved.
-        true_h = (true_h // 8) * 8
-        true_w = (true_w // 8) * 8
+        if alignment_mode.startswith("crop"):
+            try:
+                crop_factor = int(alignment_mode.split("_")[1])
+            except (IndexError, ValueError):
+                crop_factor = 16
+            temp_transform = Compose([
+                NaResize(resolution=resolution, mode="side", downsample_only=False, max_resolution=max_resolution),
+                Lambda(lambda x: torch.clamp(x, 0.0, 1.0)),
+                DivisibleCrop((crop_factor, crop_factor))
+            ])
+            resized_sample = temp_transform(sample_frame)
+            true_h, true_w = resized_sample.shape[-2:]
+        else:
+            # Get true target size (after resize, before padding)
+            temp_transform = Compose([
+                NaResize(resolution=resolution, mode="side", downsample_only=False, max_resolution=max_resolution),
+                Lambda(lambda x: torch.clamp(x, 0.0, 1.0))
+            ])
+            resized_sample = temp_transform(sample_frame)
+            true_h, true_w = resized_sample.shape[-2:]
+            
+            # Round to multiples of 8: required by the VAE (stride-8 convs -> latent is 1/8
+            # spatial) and by the TensorRT tile path (tile boundaries must align with
+            # latent boundaries, otherwise smeared/black tiles appear). Multiples of 8
+            # are also even, so libx264 compatibility is preserved.
+            true_h = (true_h // 8) * 8
+            true_w = (true_w // 8) * 8
         
         # Cache for later use in trimming
         ctx['true_target_dims'] = (true_h, true_w)

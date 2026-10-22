@@ -238,6 +238,20 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                         "Keep False unless you notice periodic edge checkerboard artifacts on non-standard aspect ratios."
                     )
                 ),
+
+                io.Combo.Input("alignment_mode",
+                    options=["pad (lossless)", "crop_16", "crop_32", "crop_64"],
+                    default="pad (lossless)",
+                    optional=True,
+                    tooltip=(
+                        "How to align video dimensions to model grid (default: 'pad (lossless)').\n"
+                        "• 'pad (lossless)': Lossless reflection padding to 16-multiple, restored after decoding.\n"
+                        "• 'crop_16': Original SeedVR2 behavior. Automatically truncates odd dimensions to the nearest multiple of 16 (center crop).\n"
+                        "  Completely eliminates edge noise/artifacts on non-standard aspect ratios by eliminating padding.\n"
+                        "• 'crop_32': Truncates odd dimensions to multiple of 32 (center crop).\n"
+                        "• 'crop_64': Truncates odd dimensions to multiple of 64 (center crop)."
+                    )
+                ),
             ],
             outputs=[
                 io.Image.Output(
@@ -252,7 +266,7 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 uniform_batch_size: bool = False, temporal_overlap: int = 0, prepend_frames: int = 0,
                 color_correction: str = "wavelet", input_noise_scale: float = 0.0,
                 latent_noise_scale: float = 0.0, offload_device: str = "none",
-                enable_debug: bool = False, safe_padding: bool = False,
+                enable_debug: bool = False, safe_padding: bool = False, alignment_mode: str = "pad (lossless)",
                 vae_encode: Dict[str, Any] | None = None,
                 vae_decode: Dict[str, Any] | None = None, **kwargs) -> io.NodeOutput:
         """
@@ -504,6 +518,7 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 debug=debug
             )
             ctx['safe_padding'] = safe_padding
+            ctx['alignment_mode'] = alignment_mode
 
             # Prepare runner with model state management and global cache
             runner, cache_context = prepare_runner(
