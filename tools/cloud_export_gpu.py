@@ -264,7 +264,7 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", default="ema_vae_fp16.safetensors", help="VAE filename")
     parser.add_argument("--model-dir", default=None, help="VAE model directory (default: <repo>/models)")
-    parser.add_argument("--tile", type=int, default=256, choices=[256, 512],
+    parser.add_argument("--tile", type=int, default=256, choices=[256, 512, 768],
                         help="spatial tile size for the ONNX (256 = 1/4 memory; engine tile must match)")
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
                         help="auto = GPU first (managed-memory retry, then CPU), cuda = GPU only, cpu = CPU only")

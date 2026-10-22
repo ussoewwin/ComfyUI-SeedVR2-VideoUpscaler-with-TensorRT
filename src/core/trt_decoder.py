@@ -69,10 +69,12 @@ def find_engine_path(latent_frames: int, tile_pref: str = "auto") -> tuple[Path 
         tiles = (32,)
     elif tile_pref == "512":
         tiles = (64,)
+    elif tile_pref == "768":
+        tiles = (96,)
     else:
-        tiles = (32, 64)
+        tiles = (32, 64, 96)
     for tile in tiles:
-        overlap = 12 if tile == 32 else 24
+        overlap = 12 if tile == 32 else (24 if tile == 64 else 36)
         tile_px = tile * 8
         name = f"vae_decoder_tile_{tile_px}_{video_frames}f.rtxplan"
         for d in ARTIFACTS_DIRS:
@@ -257,7 +259,7 @@ def _available_engine_frames(tile_pref: str = "auto") -> list[int]:
     tile_pref="256"/"512" restricts the scan to that spatial tile size.
     """
     found: set[int] = set()
-    if tile_pref in ("256", "512"):
+    if tile_pref in ("256", "512", "768"):
         engine_re = re.compile(rf"^vae_decoder_tile_{int(tile_pref)}_(\d+)f\.rtxplan$")
     else:
         engine_re = _ENGINE_FILE_RE

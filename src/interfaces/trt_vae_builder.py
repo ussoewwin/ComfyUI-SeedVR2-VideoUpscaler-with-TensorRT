@@ -98,7 +98,7 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                             "(e.g. 1, 89, 93, 101, 185, 205)."
                 ),
                 io.Combo.Input("tile_size",
-                    options=["256", "512"],
+                    options=["256", "512", "768"],
                     default="256",
                     tooltip="Spatial tile size. 256px fits larger frame counts in 16GB; "
                             "512px is higher quality but limited to ~21-29 frames on 16GB."

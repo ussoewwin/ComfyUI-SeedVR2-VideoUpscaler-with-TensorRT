@@ -62,10 +62,10 @@ def find_engine_path(frames: int, tile_pref: str = "auto") -> tuple[Path | None,
     tile_pref="auto": prefers the 512px-tile engine (Studio standard), then 256px.
     tile_pref="256"/"512": only that exact tile engine is accepted.
     """
-    if tile_pref in ("256", "512"):
+    if tile_pref in ("256", "512", "768"):
         tiles = (int(tile_pref),)
     else:
-        tiles = (512, 256)
+        tiles = (768, 512, 256)
     for tile_px in tiles:
         name = f"vae_encoder_{frames}f_tile{tile_px}.rtxplan"
         for d in ARTIFACTS_DIRS:
@@ -245,7 +245,7 @@ def _available_engine_frames(tile_pref: str = "auto") -> list[int]:
     tile_pref="256"/"512" restricts the scan to that spatial tile size.
     """
     found: set[int] = set()
-    if tile_pref in ("256", "512"):
+    if tile_pref in ("256", "512", "768"):
         engine_re = re.compile(rf"^vae_encoder_(\d+)f_tile{int(tile_pref)}\.rtxplan$")
     else:
         engine_re = _ENGINE_FILE_RE
