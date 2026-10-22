@@ -365,11 +365,11 @@ class SeedVR2LoadTensorRTVAEEncoder(io.ComfyNode):
                             "auto = pick the largest available engine."
                 ),
                 io.Combo.Input("engine_tile",
-                    options=["auto", "256", "512", "768"],
+                    options=["auto", "256", "512", "768", "1024"],
                     default="auto",
                     optional=True,
                     tooltip="Encoder engine spatial tile size. auto = prefer 512px, then 256px. "
-                            "256/512 = use exactly that engine (e.g. vae_encoder_21f_tile256.rtxplan)."
+                            "256/512/768/1024 = use exactly that engine (e.g. vae_encoder_21f_tile256.rtxplan)."
                 ),
             ],
             outputs=[
@@ -442,11 +442,11 @@ class SeedVR2LoadTensorRTVAEDecoder(io.ComfyNode):
                             "auto = pick the largest available engine."
                 ),
                 io.Combo.Input("engine_tile",
-                    options=["auto", "256", "512", "768"],
+                    options=["auto", "256", "512", "768", "1024"],
                     default="auto",
                     optional=True,
                     tooltip="Decoder engine spatial tile size. auto = prefer 256px (512px as legacy fallback). "
-                            "256/512 = use exactly that engine (e.g. vae_decoder_tile_256_21f.rtxplan)."
+                            "256/512/768/1024 = use exactly that engine (e.g. vae_decoder_tile_256_21f.rtxplan)."
                 ),
             ],
             outputs=[

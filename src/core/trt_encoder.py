@@ -60,12 +60,12 @@ def find_engine_path(frames: int, tile_pref: str = "auto") -> tuple[Path | None,
     """Return (engine_path, tile_px).
 
     tile_pref="auto": prefers the 512px-tile engine (Studio standard), then 256px.
-    tile_pref="256"/"512": only that exact tile engine is accepted.
+    tile_pref="256"/"512"/"768"/"1024": only that exact tile engine is accepted.
     """
-    if tile_pref in ("256", "512", "768"):
+    if tile_pref in ("256", "512", "768", "1024"):
         tiles = (int(tile_pref),)
     else:
-        tiles = (768, 512, 256)
+        tiles = (1024, 768, 512, 256)
     for tile_px in tiles:
         name = f"vae_encoder_{frames}f_tile{tile_px}.rtxplan"
         for d in ARTIFACTS_DIRS:
@@ -117,24 +117,42 @@ def _engine(frames: int, vae: torch.nn.Module | None = None, dit_model: str | No
 
 
 def _positions(length: int, tile: int, overlap: int) -> list[int]:
+    """Even tile starts so EVERY internal boundary shares the same overlap.
+
+    The old implementation used range(0, length-tile+1, stride) and then snapped the
+    last start to length-tile, which gave the final tile a *different* stride
+    (512px tile / overlap 24 -> last stride 28 latent instead of 40). Its blend ramp was
+    then not complementary with the previous tile, the accumulated weight spiked above
+    1.0 and produced a bright vertical seam at exactly that boundary.
+    """
     if length <= tile:
         return [0]
     stride = tile - overlap
-    values = list(range(0, length - tile + 1, stride))
-    if values[-1] != length - tile:
-        values.append(length - tile)
-    return values
+    n = max(1, -(-(length - tile) // stride))  # ceil
+    return [round(i * (length - tile) / n) for i in range(n + 1)]
 
 
 def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.device) -> torch.Tensor:
-    """Cross-fade overlapping latent tiles instead of introducing hard averaging edges."""
+    """Complementary cosine (Hann) cross-fade for a tile edge (see trt_decoder.py)."""
     weight = torch.ones(length, device=device, dtype=torch.float32)
     if left and overlap:
-        weight[:overlap] = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
+        t = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
+        weight[:overlap] = 0.5 * (1.0 - torch.cos(torch.pi * t))
     if right and overlap:
-        weight[-overlap:] = torch.minimum(
-            weight[-overlap:], torch.linspace(1.0, 0.0, overlap + 1, device=device)[1:]
-        )
+        t = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
+        weight[-overlap:] = torch.minimum(weight[-overlap:], 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t)))
+    return weight
+
+
+def _feather_edges(length: int, left_ov: int, right_ov: int, device: torch.device) -> torch.Tensor:
+    """Complementary cosine taper with an explicit overlap for each side."""
+    weight = torch.ones(length, device=device, dtype=torch.float32)
+    if left_ov > 0:
+        t = torch.linspace(0.0, 1.0, left_ov + 1, device=device)[1:]
+        weight[:left_ov] = 0.5 * (1.0 - torch.cos(torch.pi * t))
+    if right_ov > 0:
+        t = torch.linspace(0.0, 1.0, right_ov + 1, device=device)[1:]
+        weight[-right_ov:] = torch.minimum(weight[-right_ov:], 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t)))
     return weight
 
 
@@ -159,6 +177,8 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
     source = sample.to(device="cuda", dtype=torch.float16).contiguous()
     tile, overlap = tile_px, 96  # 96px fixed tile-to-tile overlap (12 latent px), Studio reference value
     ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
+    ys_index = {v: i for i, v in enumerate(ys)}
+    xs_index = {v: i for i, v in enumerate(xs)}
     padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
     source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
     latent_frames = (frames - 1) // 4 + 1
@@ -208,8 +228,14 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
                                 f"min={float(_dbg_tv.min()):.4f} max={float(_dbg_tv.max()):.4f} "
                                 f"std={_dbg_sd:.5f}" + ("  <<< BLACK?" if _dbg_sd < 0.05 else ""))
                 ly, lx = y // 8, x // 8
-                wy = _feather(tile_lat, overlap_latent, y != ys[0], y != ys[-1], tile_output.device)
-                wx = _feather(tile_lat, overlap_latent, x != xs[0], x != xs[-1], tile_output.device)
+                # ACTUAL overlap per side (even tile starts: last stride may differ).
+                yi, xi = ys_index[y], xs_index[x]
+                ov_l_y = (y - ys[yi - 1]) // 8 if yi > 0 else 0
+                ov_r_y = (ys[yi + 1] - y) // 8 if yi < len(ys) - 1 else 0
+                ov_l_x = (x - xs[xi - 1]) // 8 if xi > 0 else 0
+                ov_r_x = (xs[xi + 1] - x) // 8 if xi < len(xs) - 1 else 0
+                wy = _feather_edges(tile_lat, ov_l_y, ov_r_y, tile_output.device)
+                wx = _feather_edges(tile_lat, ov_l_x, ov_r_x, tile_output.device)
                 window = (wy[:, None] * wx[None, :]).view(1, 1, 1, tile_lat, tile_lat)
                 result[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += tile_output.float() * window
                 weights[:, :, :, ly:ly + tile_lat, lx:lx + tile_lat] += window.to(weights.dtype)
@@ -242,10 +268,10 @@ _ENGINE_FILE_RE = re.compile(r"^vae_encoder_(\d+)f_tile\d+\.rtxplan$")
 def _available_engine_frames(tile_pref: str = "auto") -> list[int]:
     """Return the sorted video-frame sizes of usable encoder engines on disk.
 
-    tile_pref="256"/"512" restricts the scan to that spatial tile size.
+    tile_pref="256"/"512"/"768"/"1024" restricts the scan to that spatial tile size.
     """
     found: set[int] = set()
-    if tile_pref in ("256", "512", "768"):
+    if tile_pref in ("256", "512", "768", "1024"):
         engine_re = re.compile(rf"^vae_encoder_(\d+)f_tile{int(tile_pref)}\.rtxplan$")
     else:
         engine_re = _ENGINE_FILE_RE
@@ -269,7 +295,7 @@ def _available_engine_frames(tile_pref: str = "auto") -> list[int]:
 def pick_engine_frames(video_frames: int, preferred: str = "auto", tile_pref: str = "auto") -> int | None:
     """Pick the encoder engine frame size for a video of `video_frames` frames.
 
-    tile_pref="256"/"512" restricts the engine scan to that spatial tile size.
+    tile_pref="256"/"512"/"768"/"1024" restricts the engine scan to that spatial tile size.
     Selection order:
     1. preferred (from the loader dropdown / settings node) if that engine exists;
     2. an engine matching video_frames exactly (1-shot encode);

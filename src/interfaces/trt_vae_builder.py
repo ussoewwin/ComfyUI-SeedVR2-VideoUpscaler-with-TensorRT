@@ -1,7 +1,7 @@
 """ComfyUI Node: SeedVR2 Build TensorRT VAE Engines.
 
 Runs the explicit build scripts (tools/cloud_export_gpu.py + tools/cloud_build_engine.py)
-as subprocesses so the user chooses the frame count and tile size (256/512) by hand.
+as subprocesses so the user chooses the frame count and tile size (256/512/768/1024) by hand.
 There is NO auto-build at inference time: if the engine is missing the pipeline falls
 back to the standard PyTorch VAE.
 """
@@ -98,10 +98,10 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                             "(e.g. 1, 89, 93, 101, 185, 205)."
                 ),
                 io.Combo.Input("tile_size",
-                    options=["256", "512", "768"],
+                    options=["256", "512", "768", "1024"],
                     default="256",
                     tooltip="Spatial tile size. 256px fits larger frame counts in 16GB; "
-                            "512px is higher quality but limited to ~21-29 frames on 16GB."
+                            "512px/768px/1024px offer progressively higher visual continuity."
                 ),
                 io.Combo.Input("kind",
                     options=["both", "encoder", "decoder"],
@@ -225,7 +225,6 @@ class SeedVR2BuildTensorRTVAE(io.ComfyNode):
                         print(f"  [cleanup] Deleted intermediate ONNX data: {onnx_data.name}", flush=True)
                 except Exception as del_err:
                     print(f"  [cleanup] Warning deleting ONNX: {del_err}", flush=True)
-
                 size_mb = eng_path.stat().st_size / 2**20
                 status_lines.append(f" - Built {eng_name} ({size_mb:.1f} MB in {time.perf_counter() - t0:.1f}s)")
                 if pbar:
