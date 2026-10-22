@@ -40,8 +40,13 @@ def make_720Pwindows_bysize(size: Tuple[int, int, int], num_windows: Tuple[int, 
     scale = math.sqrt((45 * 80) / (h * w))
     resized_h, resized_w = round(h * scale), round(w * scale)
     wh, ww = ceil(resized_h / resized_nh), ceil(resized_w / resized_nw)  # window size.
-    # Preserve standard 720p/1080p/4K nominal window dimensions (major 27, minor 15) without breaking standard resolutions
-    if w >= h:
+    # At 8K/ultra-high resolutions (area > 35000 tokens or max dim > 240 tokens / 3840px),
+    # clamp BOTH dimensions to nominal window size (>= 27 tokens = 432px) to eliminate tile streaks.
+    # At standard resolutions (4K, 1440p, 1080p, 720p), strictly preserve standard aspect dimensions (27, 15).
+    if (h * w > 35000) or max(h, w) > 240:
+        ww = max(ww, 27)
+        wh = max(wh, 27)
+    elif w >= h:
         ww = max(ww, 27)
         wh = max(wh, 15)
     else:
@@ -80,8 +85,13 @@ def make_shifted_720Pwindows_bysize(size: Tuple[int, int, int], num_windows: Tup
     scale = math.sqrt((45 * 80) / (h * w))
     resized_h, resized_w = round(h * scale), round(w * scale)
     wh, ww = ceil(resized_h / resized_nh), ceil(resized_w / resized_nw)  # window size.
-    # Preserve standard 720p/1080p/4K nominal window dimensions (major 27, minor 15)
-    if w >= h:
+    # At 8K/ultra-high resolutions (area > 35000 tokens or max dim > 240 tokens / 3840px),
+    # clamp BOTH dimensions to nominal window size (>= 27 tokens = 432px) to eliminate tile streaks.
+    # At standard resolutions (4K, 1440p, 1080p, 720p), strictly preserve standard aspect dimensions (27, 15).
+    if (h * w > 35000) or max(h, w) > 240:
+        ww = max(ww, 27)
+        wh = max(wh, 27)
+    elif w >= h:
         ww = max(ww, 27)
         wh = max(wh, 15)
     else:
