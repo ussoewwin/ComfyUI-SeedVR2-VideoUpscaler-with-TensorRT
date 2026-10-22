@@ -166,10 +166,7 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
     video_frames = (latent_frames - 1) * 4 + 1
     ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
     padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
-    pad_w, pad_h = padded_w - width, padded_h - height
-    if pad_w > 0 or pad_h > 0:
-        pad_mode = "reflect" if (pad_w < width and pad_h < height) else "replicate"
-        source = torch.nn.functional.pad(source, (0, pad_w, 0, pad_h), mode=pad_mode)
+    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
     out_h, out_w = height * 8, width * 8
     raw_out_h, raw_out_w = padded_h * 8, padded_w * 8
     # VRAM: 'result' must stay fp32 (it is the accumulation the decoder divides once at the end),
