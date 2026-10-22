@@ -241,6 +241,12 @@ def _decode_single_chunk(latent: torch.Tensor, latent_frames: int, vae: torch.nn
     import gc as _gc
     _gc.collect()
     if torch.cuda.is_available():
+        try:
+            import comfy.model_management as mm
+            mm.soft_empty_cache(force=True)
+        except Exception:
+            pass
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
     return decoded
 

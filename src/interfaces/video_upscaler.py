@@ -356,6 +356,17 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
             if ctx:
                 cleanup_text_embeddings(ctx, debug)
                 ctx = None
+
+            # Purge lingering ComfyUI VRAM caches and dead models
+            try:
+                import comfy.model_management as mm
+                mm.cleanup_models_gc()
+                mm.cleanup_models()
+                mm.soft_empty_cache(force=True)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+            except Exception:
+                pass
         
         # Extract configuration from dict inputs
         dit_model = dit.get("model", "seedvr2_ema_3b_fp16.safetensors")
@@ -438,6 +449,18 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
             except Exception:
                 pass
         
+        # Pre-execution ComfyUI VRAM Pollution Purge:
+        # Evict unneeded models and purge caches from predecessor nodes before SeedVR2 allocation
+        try:
+            import comfy.model_management as mm
+            mm.cleanup_models_gc()
+            mm.cleanup_models()
+            mm.soft_empty_cache(force=True)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+        except Exception:
+            pass
+
         # Print header
         debug.print_header()
 

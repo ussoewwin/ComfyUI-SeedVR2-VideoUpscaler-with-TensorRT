@@ -545,6 +545,12 @@ def encode_all_batches(
             import gc as _gc
             _gc.collect()
             if torch.cuda.is_available():
+                try:
+                    import comfy.model_management as mm
+                    mm.soft_empty_cache(force=True)
+                except Exception:
+                    pass
+                torch.cuda.synchronize()
                 torch.cuda.empty_cache()
             
             debug.end_timer(f"encode_batch_{encode_idx+1}", f"Encoded batch {encode_idx+1}")
@@ -848,6 +854,12 @@ def upscale_all_batches(
             import gc as _gc
             _gc.collect()
             if torch.cuda.is_available():
+                try:
+                    import comfy.model_management as mm
+                    mm.soft_empty_cache(force=True)
+                except Exception:
+                    pass
+                torch.cuda.synchronize()
                 torch.cuda.empty_cache()
             
             debug.end_timer(f"upscale_batch_{upscale_idx+1}", f"Upscaled batch {upscale_idx+1}")
@@ -1146,6 +1158,12 @@ def decode_all_batches(
             import gc as _gc
             _gc.collect()
             if torch.cuda.is_available():
+                try:
+                    import comfy.model_management as mm
+                    mm.soft_empty_cache(force=True)
+                except Exception:
+                    pass
+                torch.cuda.synchronize()
                 torch.cuda.empty_cache()
             
             debug.end_timer(f"decode_batch_{decode_idx+1}", f"Decoded batch {decode_idx+1}")
@@ -1507,6 +1525,12 @@ def postprocess_all_batches(
             import gc as _gc
             _gc.collect()
             if torch.cuda.is_available():
+                try:
+                    import comfy.model_management as mm
+                    mm.soft_empty_cache(force=True)
+                except Exception:
+                    pass
+                torch.cuda.synchronize()
                 torch.cuda.empty_cache()
             
             debug.end_timer(f"postprocess_batch_{info_idx+1}", f"Post-processed batch {info_idx+1}")

@@ -296,6 +296,12 @@ def clear_memory(debug: Optional['Debug'] = None, deep: bool = False, force: boo
         debug.start_timer(gpu_timer)
     
     if is_cuda_available():
+        try:
+            import comfy.model_management as mm
+            mm.soft_empty_cache(force=True)
+        except Exception:
+            pass
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
     elif is_mps_available():
