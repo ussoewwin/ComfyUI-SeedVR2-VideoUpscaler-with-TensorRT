@@ -117,14 +117,7 @@ def _engine(frames: int, vae: torch.nn.Module | None = None, dit_model: str | No
 
 
 def _positions(length: int, tile: int, overlap: int) -> list[int]:
-    """Even tile starts so EVERY internal boundary shares the same overlap.
-
-    The old implementation used range(0, length-tile+1, stride) and then snapped the
-    last start to length-tile, which gave the final tile a *different* stride
-    (512px tile / overlap 24 -> last stride 28 latent instead of 40). Its blend ramp was
-    then not complementary with the previous tile, the accumulated weight spiked above
-    1.0 and produced a bright vertical seam at exactly that boundary.
-    """
+    """Even tile starts so EVERY internal boundary shares the same overlap."""
     if length <= tile:
         return [0]
     stride = tile - overlap
@@ -140,19 +133,20 @@ def _feather(length: int, overlap: int, left: bool, right: bool, device: torch.d
         weight[:overlap] = 0.5 * (1.0 - torch.cos(torch.pi * t))
     if right and overlap:
         t = torch.linspace(0.0, 1.0, overlap + 1, device=device)[1:]
-        weight[-overlap:] = torch.minimum(weight[-overlap:], 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t)))
+        weight[-overlap:] = 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t))
     return weight
 
 
 def _feather_edges(length: int, left_ov: int, right_ov: int, device: torch.device) -> torch.Tensor:
-    """Complementary cosine taper with an explicit overlap for each side."""
+    """Complementary cosine taper with an explicit overlap for each side.
+    The rising ramp (left) and falling ramp (right) of overlapping tiles sum to exactly 1.0."""
     weight = torch.ones(length, device=device, dtype=torch.float32)
     if left_ov > 0:
         t = torch.linspace(0.0, 1.0, left_ov + 1, device=device)[1:]
         weight[:left_ov] = 0.5 * (1.0 - torch.cos(torch.pi * t))
     if right_ov > 0:
         t = torch.linspace(0.0, 1.0, right_ov + 1, device=device)[1:]
-        weight[-right_ov:] = torch.minimum(weight[-right_ov:], 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t)))
+        weight[-right_ov:] = 1.0 - 0.5 * (1.0 - torch.cos(torch.pi * t))
     return weight
 
 
@@ -175,17 +169,20 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
         torch.cuda.synchronize()
 
     source = sample.to(device="cuda", dtype=torch.float16).contiguous()
-    tile, overlap = tile_px, 96  # 96px fixed tile-to-tile overlap (12 latent px), Studio reference value
-    ys, xs = _positions(height, tile, overlap), _positions(width, tile, overlap)
-    ys_index = {v: i for i, v in enumerate(ys)}
-    xs_index = {v: i for i, v in enumerate(xs)}
-    padded_h, padded_w = max(height, ys[-1] + tile), max(width, xs[-1] + tile)
-    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
     latent_frames = (frames - 1) // 4 + 1
     latent_h, latent_w = height // 8, width // 8
-    raw_h, raw_w = padded_h // 8, padded_w // 8
     tile_lat = tile_px // 8
-    overlap_latent = overlap // 8
+    # 37.5% overlap ratio (same standard as decoder: tile_lat * 3 // 8, minimum 12 latent px = 96px)
+    overlap_latent = max(12, tile_lat * 3 // 8)
+    ys_lat = _positions(latent_h, tile_lat, overlap_latent)
+    xs_lat = _positions(latent_w, tile_lat, overlap_latent)
+    ys_index = {v: i for i, v in enumerate(ys_lat)}
+    xs_index = {v: i for i, v in enumerate(xs_lat)}
+
+    padded_h = max(height, (ys_lat[-1] + tile_lat) * 8)
+    padded_w = max(width, (xs_lat[-1] + tile_lat) * 8)
+    source = torch.nn.functional.pad(source, (0, padded_w - width, 0, padded_h - height))
+    raw_h, raw_w = padded_h // 8, padded_w // 8
     # VRAM: same idea as the decoder - result stays fp32, the feather weights are a smooth
     # blend map that tolerates fp16 (see trt_decoder.py).
     result = torch.zeros((1, 32, latent_frames, raw_h, raw_w), device="cuda", dtype=torch.float32)
@@ -212,9 +209,10 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
         # A context's tensor addresses are mutable. For the safe/default path we execute
         # one tile at a time under _ENCODE_LOCK with stream.synchronize() so addresses
         # cannot be overwritten by a later queued tile.
-        for y in ys:
-            for x in xs:
-                tile_input = source[:, :, :, y:y + tile, x:x + tile].contiguous()
+        for ly in ys_lat:
+            for lx in xs_lat:
+                y, x = ly * 8, lx * 8
+                tile_input = source[:, :, :, y:y + tile_px, x:x + tile_px].contiguous()
                 tile_output = torch.zeros((1, 32, latent_frames, tile_lat, tile_lat), device="cuda", dtype=torch.float16)
                 context.set_tensor_address(input_name, tile_input.data_ptr())
                 context.set_tensor_address(output_name, tile_output.data_ptr())
@@ -224,16 +222,17 @@ def _encode_single_chunk(sample: torch.Tensor, frames: int, vae: torch.nn.Module
                 if _TRT_DEBUG:
                     _dbg_tv = tile_output.float()
                     _dbg_sd = float(_dbg_tv.std())
-                    _trt_dbg_log(f"enc tile y={y} x={x} (ly={y // 8},lx={x // 8}) "
+                    _trt_dbg_log(f"enc tile y={y} x={x} (ly={ly},lx={lx}) "
                                 f"min={float(_dbg_tv.min()):.4f} max={float(_dbg_tv.max()):.4f} "
                                 f"std={_dbg_sd:.5f}" + ("  <<< BLACK?" if _dbg_sd < 0.05 else ""))
-                ly, lx = y // 8, x // 8
-                # ACTUAL overlap per side (even tile starts: last stride may differ).
-                yi, xi = ys_index[y], xs_index[x]
-                ov_l_y = (y - ys[yi - 1]) // 8 if yi > 0 else 0
-                ov_r_y = (ys[yi + 1] - y) // 8 if yi < len(ys) - 1 else 0
-                ov_l_x = (x - xs[xi - 1]) // 8 if xi > 0 else 0
-                ov_r_x = (xs[xi + 1] - x) // 8 if xi < len(xs) - 1 else 0
+                # Use the ACTUAL overlap with each neighbour in latent units:
+                # Overlap between tile i-1 (starts at ys_lat[yi-1]) and tile i (starts at ly)
+                # is tile_lat - (ly - ys_lat[yi-1]).
+                yi, xi = ys_index[ly], xs_index[lx]
+                ov_l_y = tile_lat - (ly - ys_lat[yi - 1]) if yi > 0 else 0
+                ov_r_y = tile_lat - (ys_lat[yi + 1] - ly) if yi < len(ys_lat) - 1 else 0
+                ov_l_x = tile_lat - (lx - xs_lat[xi - 1]) if xi > 0 else 0
+                ov_r_x = tile_lat - (xs_lat[xi + 1] - lx) if xi < len(xs_lat) - 1 else 0
                 wy = _feather_edges(tile_lat, ov_l_y, ov_r_y, tile_output.device)
                 wx = _feather_edges(tile_lat, ov_l_x, ov_r_x, tile_output.device)
                 window = (wy[:, None] * wx[None, :]).view(1, 1, 1, tile_lat, tile_lat)
