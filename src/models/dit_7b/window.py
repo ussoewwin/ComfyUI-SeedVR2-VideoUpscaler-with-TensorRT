@@ -40,10 +40,13 @@ def make_720Pwindows_bysize(size: Tuple[int, int, int], num_windows: Tuple[int, 
     scale = math.sqrt((45 * 80) / (h * w))
     resized_h, resized_w = round(h * scale), round(w * scale)
     wh, ww = ceil(resized_h / resized_nh), ceil(resized_w / resized_nw)  # window size.
-    # Prevent window over-fragmentation into narrow strips (e.g. 256px / 16 tok) at ultra-high resolutions (4320p)
-    # Clamp to nominal 720p/1080p window size (>= 27 tokens = 432px)
-    ww = max(ww, 27)
-    wh = max(wh, 27)
+    # Preserve standard 720p/1080p/4K nominal window dimensions (major 27, minor 15) without breaking standard resolutions
+    if w >= h:
+        ww = max(ww, 27)
+        wh = max(wh, 15)
+    else:
+        ww = max(ww, 15)
+        wh = max(wh, 27)
     wt = ceil(min(t, 30) / resized_nt)  # window size.
     nt, nh, nw = ceil(t / wt), ceil(h / wh), ceil(w / ww)  # window size.
 
@@ -77,9 +80,13 @@ def make_shifted_720Pwindows_bysize(size: Tuple[int, int, int], num_windows: Tup
     scale = math.sqrt((45 * 80) / (h * w))
     resized_h, resized_w = round(h * scale), round(w * scale)
     wh, ww = ceil(resized_h / resized_nh), ceil(resized_w / resized_nw)  # window size.
-    # Prevent window over-fragmentation at ultra-high resolutions
-    ww = max(ww, 27)
-    wh = max(wh, 27)
+    # Preserve standard 720p/1080p/4K nominal window dimensions (major 27, minor 15)
+    if w >= h:
+        ww = max(ww, 27)
+        wh = max(wh, 15)
+    else:
+        ww = max(ww, 15)
+        wh = max(wh, 27)
     wt = ceil(min(t, 30) / resized_nt)  # window size.
     
     st, sh, sw = (  # shift size.
