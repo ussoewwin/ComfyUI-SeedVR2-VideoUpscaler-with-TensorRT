@@ -7,6 +7,13 @@
 
 # Changelog
 
+## v1.6.8 — 2026-10-23
+- **Summary:** Removal of the SpargeAttn-hswq (`spargeattn`) attention backend from the DiT loader nodes:
+  - **`spargeattn` Option Removed:** The `spargeattn` attention backend produced vertical seam noise in the upscaled output at high target resolutions, while `sdpa`, `flash_attn_2`, `flash_attn_3`, `sageattn_2`, and `sageattn_3` were unaffected. The backend has therefore been withdrawn, and `spargeattn` removed from the `attention_mode` combo on both DiT loaders (`SeedVR2 (Down)Load DiT Model` and `SeedVR2 (Down)Load DiT Model with Distorch2`).
+  - **`sparge_topk` Control Removed:** The associated `sparge_topk` KV keep-ratio input, together with its configuration wiring, has been removed from both loader nodes.
+  - **Remaining Attention Backends:** `sdpa` / `flash_attn_2` / `flash_attn_3` / `sageattn_2` / `sageattn_3`.
+- **Technical Details:** See [v1.6.8 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.8) for complete explanation
+
 ## v1.6.7 — 2026-10-12
 - **Summary:** Elimination of right/bottom-edge checkerboard noise via optional adaptive safe padding & TensorRT VAE cross-stream synchronization:
   - **Optional Adaptive Safe Padding for DiT 720P Window Attention:** Resolved an issue where specific portrait/custom aspect ratios (such as 560×938 2x upscaling) generated runt window slivers (e.g. width remainder of only 2 latent pixels against the 23-pixel window size). Isolated slivers lacked spatial context, causing localized self-attention degradation and checkerboard noise along the right edge and bottom-right corner.

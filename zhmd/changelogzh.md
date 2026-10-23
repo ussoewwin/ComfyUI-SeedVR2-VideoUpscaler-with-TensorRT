@@ -7,6 +7,13 @@
 
 # 更新日志
 
+## v1.6.8 — 2026-10-23
+- **摘要：** 从 DiT 加载器节点中移除 SpargeAttn-hswq（`spargeattn`）注意力后端：
+  - **移除 `spargeattn` 选项：** `spargeattn` 注意力后端在高目标分辨率下会在放大输出中产生纵向接缝噪声，而 `sdpa`、`flash_attn_2`、`flash_attn_3`、`sageattn_2`、`sageattn_3` 均不受影响。因此该后端已撤回，`spargeattn` 已从两个 DiT 加载器（`SeedVR2 (Down)Load DiT Model` 与 `SeedVR2 (Down)Load DiT Model with Distorch2`）的 `attention_mode` 组合框中移除。
+  - **移除 `sparge_topk` 控件：** 关联的 `sparge_topk` KV 保留比例输入及其配置接线已从两个加载器节点中移除。
+  - **保留的注意力后端：** `sdpa` / `flash_attn_2` / `flash_attn_3` / `sageattn_2` / `sageattn_3`。
+- **技术细节：** 参见 [v1.6.8 发行说明](v1.6.8.md) 完整说明
+
 ## v1.6.7 — 2026-10-12
 - **摘要：** 可选自适应安全填充根除右边缘/右下角棋盘格噪声与 TensorRT VAE 跨流同步强化：
   - **DiT 720P 窗口自适应安全填充：** 彻底修复了在特定竖屏或非标宽高比（例如 560×938 的 2 倍超分辨率处理）下，横向切分出现极小残余窗口切片（例如对比 23 像素窗口宽度仅余 2 个潜空间像素）的问题。由于孤立的微型窗口缺失局部空间上下文，导致自注意力计算退化并在画面右边缘及右下角产生断续的棋盘格/点状噪声。
