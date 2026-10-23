@@ -141,6 +141,11 @@ The **`SeedVR2 Video Upscaler`** node is the core execution node that orchestrat
       <img src="https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/noise.png" width="100" alt="Checkerboard noise on custom aspect ratio (e.g. 560x938 2x)" />
     </p>
 
+  - **`alignment_mode`**: Resolution grid alignment selector (default: `pad (lossless)`). Controls how non-standard resolutions and arbitrary aspect ratios are aligned to the spatial divisible grid of the model:
+    - **`pad (lossless)` (Default)**: Applies reflection padding (`DivisiblePad`) up to a 16-multiple without altering the native image content, restoring original dimensions losslessly after decoding.
+    - **`crop_16` (Original SeedVR2 Behavior)**: Truncates odd remainder dimensions to the nearest multiple of 16 using center-crop (`DivisibleCrop(16)`), completely eliminating padding-induced edge artifacts on custom aspect ratios by eliminating padding altogether.
+    - **`crop_32` / `crop_64`**: Center-crops odd dimensions to multiples of 32 or 64 for strict alignment constraints.
+
 
 ## Documentation
 

@@ -141,6 +141,11 @@
       <img src="https://raw.githubusercontent.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/main/docs/noise.png" width="100" alt="特殊分辨率（如 560x938 2x）下的棋盘格噪点" />
     </p>
 
+  - **`alignment_mode`**：分辨率网格对齐方式选择（默认：`pad (lossless)`）。用于精准控制非标分辨率与任意长宽比在对齐模型空间整倍数网格时的处理机制：
+    - **`pad (lossless)`（默认）**：采用反射填充（`DivisiblePad`）将图像尺寸扩展至 16 的倍数，在解码后无损裁剪恢复原生目标长宽比与像素规格。
+    - **`crop_16`（SeedVR2 原生默认行为）**：采用居中裁剪（`DivisibleCrop(16)`）将非整倍数端数截断至最近的 16 倍数，彻底不引入任何填充区域，从根本上杜绝填充边界在特定长宽比下可能产生的边缘瑕疵。
+    - **`crop_32` / `crop_64`**：将端数尺寸居中裁剪至 32 或 64 的整数倍，以适配高阶网格对齐约束。
+
 ## 文档
 
 详细说明请参阅官方仓库：
