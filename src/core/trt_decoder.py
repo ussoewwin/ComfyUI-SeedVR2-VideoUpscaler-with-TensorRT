@@ -60,8 +60,9 @@ _DECODE_LOCK = Lock()
 def find_engine_path(latent_frames: int, tile_pref: str = "auto") -> tuple[Path | None, int, int]:
     """Return (engine_path, tile, overlap).
 
-    tile_pref="auto": prefers the 256px tile (Studio standard: 32 lat px, overlap 12);
-    the 512px tile (64 lat px, overlap 24) is kept as legacy fallback.
+    tile_pref="auto": prefers the largest available tile (encoder-side convention:
+    auto resolves to the biggest engine that exists, e.g. 1024px when built),
+    falling back through 96/64 to 32 lat px.
     tile_pref="256"/"512"/"768"/"1024": only that exact tile engine is accepted.
     """
     video_frames = (latent_frames - 1) * 4 + 1
@@ -74,7 +75,7 @@ def find_engine_path(latent_frames: int, tile_pref: str = "auto") -> tuple[Path 
     elif tile_pref == "1024":
         tiles = (128,)
     else:
-        tiles = (32, 64, 96, 128)
+        tiles = (128, 96, 64, 32)
     for tile in tiles:
         overlap = tile * 3 // 8
         tile_px = tile * 8
