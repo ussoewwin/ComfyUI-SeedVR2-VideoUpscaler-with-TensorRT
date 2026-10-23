@@ -7,6 +7,14 @@
 
 # 更新日志
 
+## v1.7.0 — 2026-10-23
+- **摘要：** SeedVR2 Video Upscaler 节点新增 `alignment_mode`（分辨率网格对齐方式选择）：
+  - **`alignment_mode` 组合选择控件：** 在 `SeedVR2 Video Upscaler` 节点中新增专用选项（`pad (lossless)`、`crop_16`、`crop_32`、`crop_64`），用于精准控制非标分辨率与任意长宽比在对齐模型空间整倍数网格时的处理机制：
+    - **`pad (lossless)`（默认）：** 采用反射填充（`DivisiblePad`）将图像尺寸扩展至 16 的倍数，在解码后无损裁剪恢复原生目标长宽比与像素规格。
+    - **`crop_16`（SeedVR2 原生默认行为）：** 采用居中裁剪（`DivisibleCrop(16)`）将非整倍数端数截断至最近的 16 倍数，彻底不引入任何填充区域，从根本上杜绝填充边界在特定长宽比下可能产生的边缘瑕疵。
+    - **`crop_32` / `crop_64`：** 将端数尺寸居中裁剪至 32 或 64 的整数倍，以适配高阶网格对齐约束。
+- **技术细节：** 参见 [v1.7.0 发行说明](v1.7.0.md) 获取完整说明
+
 ## v1.6.9 — 2026-10-23
 - **摘要：** 系统性显存（VRAM）污染消除与深度内存回收架构：
   - **执行前后 ComfyUI 驻留模型与缓存强制排空：** 在 `video_upscaler.py` 中引入执行前与执行后的强制清理机制（`mm.cleanup_models_gc()`、`mm.cleanup_models()`、`mm.soft_empty_cache(force=True)` 与 `torch.cuda.synchronize()`），彻底驱逐工作流前置节点遗留的常驻模型与显存残片。

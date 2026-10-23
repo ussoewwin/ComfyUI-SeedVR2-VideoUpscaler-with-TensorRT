@@ -7,6 +7,14 @@
 
 # Changelog
 
+## v1.7.0 — 2026-10-23
+- **Summary:** Added `alignment_mode` resolution grid alignment selector to SeedVR2 Video Upscaler:
+  - **`alignment_mode` Input Selector:** Introduced a dedicated combo input (`pad (lossless)`, `crop_16`, `crop_32`, `crop_64`) on `SeedVR2 Video Upscaler` to control how non-standard resolutions and arbitrary aspect ratios are aligned to the model's spatial divisible grid:
+    - **`pad (lossless)` (Default):** Applies reflection padding (`DivisiblePad`) up to a 16-multiple without altering the native image content, restoring original dimensions losslessly after decoding.
+    - **`crop_16` (Original SeedVR2 Behavior):** Truncates odd remainder dimensions to the nearest multiple of 16 using center-crop (`DivisibleCrop(16)`), completely eliminating padding-induced edge artifacts on custom aspect ratios by eliminating padding altogether.
+    - **`crop_32` / `crop_64`:** Center-crops odd dimensions to multiples of 32 or 64 for strict alignment constraints.
+- **Technical Details:** See [v1.7.0 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.7.0) for complete explanation
+
 ## v1.6.9 — 2026-10-23
 - **Summary:** Systematic VRAM contamination elimination & deep memory reclamation architecture:
   - **Pre- and Post-Execution ComfyUI Model & Cache Purge:** Integrated explicit model eviction and cache drainage (`mm.cleanup_models_gc()`, `mm.cleanup_models()`, `mm.soft_empty_cache(force=True)`, and `torch.cuda.synchronize()`) before and after upscaler execution in `video_upscaler.py`. Completely purges lingering resident models and tensor remnants left behind by predecessor nodes in the workflow.
