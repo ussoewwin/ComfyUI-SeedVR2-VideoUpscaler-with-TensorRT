@@ -80,7 +80,7 @@
 - **`offload_device`**：DiT 非活跃处理时的承载设备（`none` / `cpu` / 其他 GPU）。BlockSwap 的前提条件。
 - **`cache_model`**：在工作流多次运行之间将 DiT 保留在 `offload_device` 上（需要设置 `offload_device`）。
 - **`eject_models`**：加载本 DiT 前卸载其他常驻模型以释放 VRAM（建议开启）。
-- **`attention_mode`** / **`sparge_topk`**：注意力后端与 SpargeAttn KV 保留比例（与 DisTorch2 加载器相同）。
+- **`attention_mode`**：注意力后端（与 DisTorch2 加载器相同）。
 - **`torch_compile_args`**：可选的 `torch.compile` 设置，来自 SeedVR2 Torch Compile Settings 节点。
 - **`norm_bf16`**：Phase 2 的 RMS/QK norm 精度。关闭 = 传统 fp32 路径（质量优先）。开启 = bf16 norm 路径（节省常驻 VRAM；输出与 fp32 路径不同）。
 
@@ -95,7 +95,7 @@
 - **`model`**：DiT 检查点（如 `seedvr2_7b_int8_convrot.safetensors`）。支持量化（INT8 / NVFP4）与 FP16 检查点。
   - *W4A8 注意事项：* 在 DisTorch2 下加载 W4A8 模型反而会导致显存（VRAM）开销增加。因此 DisTorch2 不保证支持 W4A8 模型；运行 W4A8 检查点时请务必使用标准 / 传统加载器（**`SeedVR2 (Down)Load DiT Model`**）。
 - **`device`**：DiT 推理的计算设备。
-- **`attention_mode`** / **`sparge_topk`**：注意力后端与 SpargeAttn KV 保留比例（与标准加载器相同）。
+- **`attention_mode`**：注意力后端（与标准加载器相同）。
 - **`distorch2_enabled`**：启用 DisTorch2 放置。关闭时行为等同标准加载器。
 - **`virtual_vram_gb`**：在计算设备上为流式传输预留的虚拟 VRAM 预算（GB）。`0` = 整个模型保留在 donor（默认放置）。
 - **`donor_device`**：物理承载打包 DiT 权重的设备（通常为 `cpu` = 系统内存）。

@@ -80,7 +80,7 @@ The **`SeedVR2 (Down)Load DiT Model`** node is the standard DiT loader. It loads
 - **`offload_device`**: Device that hosts the DiT when it is not actively processing (`none` / `cpu` / another GPU). Required for BlockSwap.
 - **`cache_model`**: Keep the DiT loaded on `offload_device` between workflow runs (requires `offload_device` to be set).
 - **`eject_models`**: Eject other resident models before this DiT loads to free VRAM (recommended ON).
-- **`attention_mode`** / **`sparge_topk`**: Attention backend and SpargeAttn KV keep ratio (identical to the DisTorch2 loader).
+- **`attention_mode`**: Attention backend (identical to the DisTorch2 loader).
 - **`torch_compile_args`**: Optional `torch.compile` settings from the SeedVR2 Torch Compile Settings node.
 - **`norm_bf16`**: RMS/QK norm precision during Phase 2. OFF = stock fp32 path (quality-priority). ON = bf16 norm path (saves resident VRAM; output differs from the fp32 path).
 
@@ -95,7 +95,7 @@ The **`SeedVR2 (Down)Load DiT Model with Distorch2`** node hosts the entire (qua
 - **`model`**: DiT checkpoint (e.g. `seedvr2_7b_int8_convrot.safetensors`). Quantized (INT8 / NVFP4) and FP16 checkpoints are supported.
   - *W4A8 Notice:* Running W4A8 models under DisTorch2 counterproductively increases VRAM consumption. Consequently, W4A8 operation is NOT guaranteed on DisTorch2; always use the standard/legacy loader (**`SeedVR2 (Down)Load DiT Model`**) for W4A8 models.
 - **`device`**: Compute device for DiT inference.
-- **`attention_mode`** / **`sparge_topk`**: Attention backend and SpargeAttn KV keep ratio (identical to the standard loader).
+- **`attention_mode`**: Attention backend (identical to the standard loader).
 - **`distorch2_enabled`**: Enable DisTorch2 placement. When off, behaves like the standard loader.
 - **`virtual_vram_gb`**: Virtual-VRAM budget in GB reserved on the compute device for streaming. `0` = keep the whole model on the donor (default placement).
 - **`donor_device`**: Device that physically hosts the packed DiT weights (typically `cpu` = system RAM).
