@@ -7,6 +7,15 @@
 
 # Changelog
 
+## v1.6.9 — 2026-10-23
+- **Summary:** Systematic VRAM contamination elimination & deep memory reclamation architecture:
+  - **Tri-Partite VRAM Reclamation in TensorRT VAE:** Implemented a three-stage deep memory purge (`del` tensor reference severance → Python `gc.collect()` → `comfy.model_management.soft_empty_cache(force=True)` and `torch.cuda.empty_cache()`) executed immediately after each chunk in `trt_decoder.py` and `trt_encoder.py`. Completely eliminates cumulative VRAM retention and memory fragmentation during ultra-high resolution tiling.
+  - **FP16 Feather Accumulation Map:** Halved the feather weight accumulator buffer (`weights`) from FP32 to FP16, saving 0.85 GiB (1080p/73f) to 3.37 GiB (1088p/289f) of redundant allocation without precision degradation.
+  - **Phase-Boundary Exclusive Model Unloading:** Enforced strict inter-phase resource deallocation in `generation_phases.py` (`release_trt_encoder()` after Phase 1 encoding, `cleanup_dit` before Phase 3, and `release_trt_decoder()` after Phase 3 decoding), preventing concurrent residence of DiT and TensorRT VAE engines in VRAM.
+  - **Torch Inductor Worker Context Purge:** Explicitly terminates `torch.compile` parallel Inductor compilation workers via `_shutdown_inductor_compile_workers()` immediately after the first batch, purging lingering CUDA contexts spawned during runtime kernel benchmarking.
+  - **Pre-Build ComfyUI VRAM Flushing:** Evacuates all resident models and forces cache drainage in `trt_vae_builder.py` prior to launching ONNX export and TensorRT compilation subprocesses.
+- **Technical Details:** See [v1.6.9 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.6.9) for complete explanation
+
 ## v1.6.8 — 2026-10-23
 - **Summary:** Removal of the SpargeAttn-hswq (`spargeattn`) attention backend from the DiT loader nodes:
   - **`spargeattn` Option Removed:** The `spargeattn` attention backend produced vertical seam noise in the upscaled output at high target resolutions, while `sdpa`, `flash_attn_2`, `flash_attn_3`, `sageattn_2`, and `sageattn_3` were unaffected. The backend has therefore been withdrawn, and `spargeattn` removed from the `attention_mode` combo on both DiT loaders (`SeedVR2 (Down)Load DiT Model` and `SeedVR2 (Down)Load DiT Model with Distorch2`).
