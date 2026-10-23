@@ -9,11 +9,10 @@
 
 ## v1.6.9 — 2026-10-23
 - **摘要：** 系统性显存（VRAM）污染消除与深度内存回收架构：
-  - **TensorRT VAE 三阶段深度显存回收：** 在 `trt_decoder.py` 与 `trt_encoder.py` 的每个分块处理完成后立即执行三阶段清理（`del` 切断张量引用 → Python `gc.collect()` 垃圾回收 → `comfy.model_management.soft_empty_cache(force=True)` 与 `torch.cuda.empty_cache()` 物理释放），彻底根除超高分辨率分块生成时的累积性显存驻留与碎片化。
-  - **羽化权重累加图 FP16 化：** 将分块融合权重累加缓冲区（`weights`）由 FP32 降为 FP16，在保证高精度融合的前提下直接削减 0.85 GiB（1080p/73f）至 3.37 GiB（1088p/289f）的显存开销。
-  - **阶段边界互斥模型释放：** 在 `generation_phases.py` 中强化阶段间的排他性资源清理（Phase 1 编码结束后执行 `release_trt_encoder()`，进入 Phase 3 前执行 `cleanup_dit`，Phase 3 解码结束后执行 `release_trt_decoder()`），杜绝 DiT 与 TensorRT VAE 引擎在显存中并发常驻。
-  - **Torch Inductor 编译进程 CUDA 上下文清理：** 在每阶段首个批次完成后通过 `_shutdown_inductor_compile_workers()` 显式关闭 `torch.compile` 并行编译工作进程，清除内核基准测试期间生成的常驻 CUDA 上下文。
-  - **引擎构建前全模型强制卸载：** 在 `trt_vae_builder.py` 启动 ONNX 导出及 TensorRT 编译子进程前，强制卸载 ComfyUI 驻留模型并排空缓存，确保构建器获得 100% 独立显存。
+  - **执行前后 ComfyUI 驻留模型与缓存强制排空：** 在 `video_upscaler.py` 中引入执行前与执行后的强制清理机制（`mm.cleanup_models_gc()`、`mm.cleanup_models()`、`mm.soft_empty_cache(force=True)` 与 `torch.cuda.synchronize()`），彻底驱逐工作流前置节点遗留的常驻模型与显存残片。
+  - **全 4 阶段每批次深度显存清理：** 在 `generation_phases.py` 的全部四个管线阶段（Phase 1 编码、Phase 2 DiT 放大、Phase 3 VAE 解码、Phase 4 后处理）中，每个批次处理完成时立即执行四阶深度清理（`_gc.collect()` → `mm.soft_empty_cache(force=True)` → `torch.cuda.synchronize()` → `torch.cuda.empty_cache()`），杜绝批次间的显存碎片与累积性张量滞留。
+  - **TensorRT VAE 与 ComfyUI 内存管理器深度协同：** 在 `trt_decoder.py` 与 `trt_encoder.py` 的每块推理结束后，将 PyTorch 的 `cuda.empty_cache()` 与 ComfyUI 的 `mm.soft_empty_cache(force=True)` 深度联动，消除 TRT 推理与 ComfyUI 显存分配器之间的冲突与污染。
+  - **核心内存管理器统一集成：** 将 `mm.soft_empty_cache(force=True)` 原生集成至 `src/optimization/memory_manager.py` 的 `clear_memory()` 中。
 - **技术细节：** 参见 [v1.6.9 发行说明](v1.6.9.md) 获取完整说明
 
 ## v1.6.8 — 2026-10-23
