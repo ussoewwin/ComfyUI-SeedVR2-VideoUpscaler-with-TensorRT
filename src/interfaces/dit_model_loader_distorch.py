@@ -113,7 +113,7 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
                     tooltip="GPU device for DiT model inference (upscaling phase)"
                 ),
                 io.Combo.Input("attention_mode",
-                    options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3", "spargeattn"],
+                    options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3"],
                     default="sdpa",
                     optional=True,
                     tooltip=(
@@ -123,22 +123,9 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
                         "? flash_attn_3: Flash Attention 3 (Hopper+, requires flash-attn with FA3 support)\n"
                         "? sageattn_2: SageAttention 2 (requires sageattention package)\n"
                         "? sageattn_3: SageAttention 3 (Blackwell/RTX 50xx only, requires sageattn3 package)\n"
-                        "? spargeattn: SpargeAttn-hswq block-sparse attention on SageAttention2++ kernels (requires spas_sage_hswq_attn package; topk fixed at 0.5; per-window seq_len >= 128 and headdim 64/128 required, otherwise falls back per window)\n"
                         "\n"
                         "SDPA is recommended - stable and works everywhere.\n"
                         "Flash Attention and SageAttention provide speedup through optimized CUDA kernels on compatible GPUs."
-                    )
-                ),
-                io.Combo.Input("sparge_topk",
-                    options=["0.05", "0.1", "0.15", "0.2", "0.25", "0.3", "0.35", "0.4", "0.45", "0.5", "0.55", "0.6", "0.65", "0.7", "0.75", "0.8", "0.85", "0.9", "0.95", "1.0"],
-                    default="0.5",
-                    optional=True,
-                    tooltip=(
-                        "SpargeAttn topK ratio (only used when attention_mode=spargeattn):\n"
-                        "? KV block keep ratio for the two-stage block-sparse filter (0.05-1.0)\n"
-                        "? Higher = more blocks computed = more accurate, less acceleration\n"
-                        "? 1.0 = compute all blocks (no skipping)\n"
-                        "? Ignored by other attention backends\n"
                     )
                 ),
                 io.Custom("TORCH_COMPILE_ARGS").Input("torch_compile_args",
@@ -235,7 +222,7 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
 
     @classmethod
     def execute(cls, model: str, device: str,
-                     attention_mode: str = "sdpa", sparge_topk: str = "0.5",
+                     attention_mode: str = "sdpa",
                      torch_compile_args: Dict[str, Any] = None,
                      distorch2_enabled: bool = True, virtual_vram_gb: float = 4.0,
                      donor_device: str = "cpu", expert_mode_allocations: str = "",
@@ -284,7 +271,6 @@ class SeedVR2LoadDiTModelDisTorch2(io.ComfyNode):
             "model": model,
             "device": device,
             "attention_mode": attention_mode,
-            "sparge_topk": sparge_topk,
             "torch_compile_args": torch_compile_args,
             "node_id": get_executing_context().node_id,
             "distorch2": distorch2,

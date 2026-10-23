@@ -409,7 +409,6 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
         # OPTIONAL inputs - use .get() with defaults
         dit_cache = dit.get("cache_model", False)
         attention_mode = dit.get("attention_mode", "sdpa")
-        sparge_topk = dit.get("sparge_topk", None)
         vae_cache = encode_cfg.get("cache_model", False)
 
         # BlockSwap configuration - construct from individual values
@@ -539,7 +538,6 @@ class SeedVR2VideoUpscaler(io.ComfyNode):
                 decode_tile_overlap=(decode_tile_overlap, decode_tile_overlap),
                 tile_debug=tile_debug,
                 attention_mode=attention_mode,
-                sparge_topk=sparge_topk,
                 torch_compile_args_dit=dit_torch_compile_args,
                 torch_compile_args_vae=vae_torch_compile_args
             )

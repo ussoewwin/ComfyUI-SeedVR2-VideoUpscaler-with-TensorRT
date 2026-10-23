@@ -112,7 +112,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                     )
                 ),
                 io.Combo.Input("attention_mode",
-                    options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3", "spargeattn"],
+                    options=["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3"],
                     default="sdpa",
                     optional=True,
                     tooltip=(
@@ -122,22 +122,9 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
                         "• flash_attn_3: Flash Attention 3 (Hopper+, requires flash-attn with FA3 support)\n"
                         "• sageattn_2: SageAttention 2 (requires sageattention package)\n"
                         "• sageattn_3: SageAttention 3 (Blackwell/RTX 50xx only, requires sageattn3 package)\n"
-                        "• spargeattn: SpargeAttn-hswq block-sparse attention on SageAttention2++ kernels (requires spas_sage_hswq_attn package; topk fixed at 0.5; per-window seq_len >= 128 and headdim 64/128 required, otherwise falls back per window)\n"
                         "\n"
                         "SDPA is recommended - stable and works everywhere.\n"
                         "Flash Attention and SageAttention provide speedup through optimized CUDA kernels on compatible GPUs."
-                    )
-                ),
-                io.Combo.Input("sparge_topk",
-                    options=["0.05", "0.1", "0.15", "0.2", "0.25", "0.3", "0.35", "0.4", "0.45", "0.5", "0.55", "0.6", "0.65", "0.7", "0.75", "0.8", "0.85", "0.9", "0.95", "1.0"],
-                    default="0.5",
-                    optional=True,
-                    tooltip=(
-                        "SpargeAttn topK ratio (only used when attention_mode=spargeattn):\n"
-                        "• KV block keep ratio for the two-stage block-sparse filter (0.05-1.0)\n"
-                        "• Higher = more blocks computed = more accurate, less acceleration\n"
-                        "• 1.0 = compute all blocks (no skipping)\n"
-                        "• Ignored by other attention backends\n"
                     )
                 ),
                 io.Custom("TORCH_COMPILE_ARGS").Input("torch_compile_args",
@@ -167,7 +154,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
     @classmethod
     def execute(cls, model: str, device: str, offload_device: str = "none",
                      cache_model: bool = False, blocks_to_swap: int = 0, 
-                     swap_io_components: bool = False, attention_mode: str = "sdpa", sparge_topk: str = "0.5",
+                     swap_io_components: bool = False, attention_mode: str = "sdpa",
                      eject_models: bool = True,
                      torch_compile_args: Dict[str, Any] = None,
                      norm_bf16: bool = False) -> io.NodeOutput:
@@ -181,7 +168,7 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             cache_model: Whether to keep model loaded between runs
             blocks_to_swap: Number of transformer blocks to swap (requires offload_device != device)
             swap_io_components: Whether to offload I/O components (requires offload_device != device)
-            attention_mode: Attention computation backend ('sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3', 'spargeattn', or 'sageattn_3')
+            attention_mode: Attention computation backend ('sdpa', 'flash_attn_2', 'flash_attn_3', 'sageattn_2', 'sageattn_3')
             eject_models: Eject other resident models before this DiT loads (frees VRAM)
             torch_compile_args: Optional torch.compile configuration from settings node
             norm_bf16: Run RMS/QK norm in bf16 during Phase 2 upscaling (VRAM-saving; output differs from fp32 path)
@@ -209,7 +196,6 @@ class SeedVR2LoadDiTModel(io.ComfyNode):
             "blocks_to_swap": blocks_to_swap,
             "swap_io_components": swap_io_components,
             "attention_mode": attention_mode,
-            "sparge_topk": sparge_topk,
             "eject_models": bool(eject_models),
             "torch_compile_args": torch_compile_args,
             "norm_bf16": bool(norm_bf16),
