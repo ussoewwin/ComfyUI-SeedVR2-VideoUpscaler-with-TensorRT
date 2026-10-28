@@ -7,6 +7,15 @@
 
 # 更新日志
 
+## v1.7.1 — 2026-10-28
+- **摘要：** TensorRT RTX 依赖栈更新：
+  - **`tensorrt-rtx` 1.6.1.120 → 1.7.1.116：** TensorRT RTX 运行时升级至 1.7.1。使用 1.6.1 构建的引擎无法被 1.7.1 反序列化（`Serialization assertion stdVersionRead == kSERIALIZATION_VERSION failed`），升级后需重新构建既有 `.rtxplan` 引擎。
+  - **`onnx` 1.22.0 → 1.23.2：** ONNX 升级至 1.23.2。
+  - **`onnxscript` 0.7.1 → 0.7.2：** onnxscript 升级至 0.7.2。
+  - **`polygraphy` 0.53.4 → 0.53.6：** Polygraphy 升级至 0.53.6。
+  - **`install.py` 强制执行固定版本：** 原 `ensure_package()` 仅检测模块能否导入，当已安装旧版本时会静默忽略 `requirements-windows-cu132.txt` 的版本约束。现改为显式传入固定版本（`tensorrt-rtx==1.7.1.116`、`onnx==1.23.2`、`onnxscript==0.7.2`、`polygraphy==0.53.6`）。
+- **技术细节：** 参见 [v1.7.1 发行说明](v1.7.1.md) 获取完整说明
+
 ## v1.7.0 — 2026-10-23
 - **摘要：** SeedVR2 Video Upscaler 节点新增 `alignment_mode`（分辨率网格对齐方式选择）：
   - **`alignment_mode` 组合选择控件：** 在 `SeedVR2 Video Upscaler` 节点中新增专用选项（`pad (lossless)`、`crop_16`、`crop_32`、`crop_64`），用于精准控制非标分辨率与任意长宽比在对齐模型空间整倍数网格时的处理机制：

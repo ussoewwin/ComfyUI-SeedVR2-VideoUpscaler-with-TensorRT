@@ -7,6 +7,15 @@
 
 # Changelog
 
+## v1.7.1 — 2026-10-28
+- **Summary:** TensorRT RTX dependency stack update:
+  - **`tensorrt-rtx` 1.6.1.120 → 1.7.1.116:** Updated the TensorRT RTX runtime to 1.7.1. Engines built with 1.6.1 cannot be deserialized by 1.7.1 (`Serialization assertion stdVersionRead == kSERIALIZATION_VERSION failed`), so existing `.rtxplan` engines must be rebuilt after upgrading.
+  - **`onnx` 1.22.0 → 1.23.2:** Updated ONNX to 1.23.2.
+  - **`onnxscript` 0.7.1 → 0.7.2:** Updated onnxscript to 0.7.2.
+  - **`polygraphy` 0.53.4 → 0.53.6:** Updated Polygraphy to 0.53.6.
+  - **Pinned Versions Enforced in `install.py`:** `ensure_package()` previously only checked whether the module could be imported, so the `requirements-windows-cu132.txt` pins were silently ignored when an older build was already installed. The installer now passes the pinned versions (`tensorrt-rtx==1.7.1.116`, `onnx==1.23.2`, `onnxscript==0.7.2`, `polygraphy==0.53.6`) explicitly.
+- **Technical Details:** See [v1.7.1 Release Notes](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT/releases/tag/v1.7.1) for complete explanation
+
 ## v1.7.0 — 2026-10-23
 - **Summary:** Added `alignment_mode` resolution grid alignment selector to SeedVR2 Video Upscaler:
   - **`alignment_mode` Input Selector:** Introduced a dedicated combo input (`pad (lossless)`, `crop_16`, `crop_32`, `crop_64`) on `SeedVR2 Video Upscaler` to control how non-standard resolutions and arbitrary aspect ratios are aligned to the model's spatial divisible grid:
