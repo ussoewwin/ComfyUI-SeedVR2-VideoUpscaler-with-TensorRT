@@ -123,12 +123,12 @@ def main() -> int:
     install_requirements()
 
     # 2. TensorRT RTX & ONNX stack
-    ensure_package("tensorrt_rtx", "tensorrt-rtx", no_deps=True)
+    ensure_package("tensorrt_rtx", "tensorrt-rtx==1.7.1.116", no_deps=True)
     # Linux: triton / Windows: triton-windows (no version pin; match installed torch)
     ensure_package("triton", "triton-windows" if sys.platform.startswith("win") else "triton", no_deps=True)
-    ensure_package("onnx", "onnx", no_deps=True)
-    ensure_package("onnxscript", "onnxscript", no_deps=True)
-    ensure_package("polygraphy", "polygraphy", no_deps=True)
+    ensure_package("onnx", "onnx==1.23.2", no_deps=True)
+    ensure_package("onnxscript", "onnxscript==0.7.2", no_deps=True)
+    ensure_package("polygraphy", "polygraphy==0.53.6", no_deps=True)
 
     # 3. TensorRT RTX VAE Engines
     sync_or_build_engines()

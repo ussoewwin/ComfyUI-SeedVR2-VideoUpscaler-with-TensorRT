@@ -2,7 +2,7 @@
 # PyTorch packages (torch 2.13.0+cu132) are installed separately from the cu132 index.
 # SageAttention 2 and FlashAttention 2 are installed from custom wheels.
 triton-windows
-tensorrt-rtx==1.6.1.120
-onnx==1.22.0
-onnxscript==0.7.1
-polygraphy==0.53.4
+tensorrt-rtx==1.7.1.116
+onnx==1.23.2
+onnxscript==0.7.2
+polygraphy==0.53.6
